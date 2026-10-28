@@ -26,6 +26,9 @@ html, body {
 }
 
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
   background: var(--cesped);
   color: var(--tinta);
   font-family: "Segoe UI", sans-serif;
@@ -86,7 +89,8 @@ select {
 .app {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
   background: var(--cesped);
 }
 
@@ -98,7 +102,7 @@ select {
 .sidebar {
   background: var(--noche);
   color: #d7e6dc;
-  min-height: 100vh;
+  min-height: 0;
   padding: 18px 12px 16px;
   display: flex;
   flex-direction: column;
@@ -522,16 +526,12 @@ button.marco {
 .cancha-card {
   position: relative;
   isolation: isolate;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
+  display: block;
   width: auto;
   min-width: 0;
   max-width: none;
   min-height: 120px;
-  padding: 12px 8px;
+  padding: 0;
   overflow: hidden;
   border: 0;
   border-radius: 4px;
@@ -551,7 +551,7 @@ button.marco {
 .cancha-card::before {
   content: "";
   position: absolute;
-  inset: 12px;
+  inset: 8px 8px 50px;
   z-index: 0;
   border: 2px solid rgba(255, 255, 255, 0.95);
   border-radius: 1px;
@@ -586,10 +586,18 @@ button.marco {
     right 78%;
 }
 
-.cancha-card > * {
-  position: relative;
+.cancha-pie {
+  position: absolute;
   z-index: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  left: 4px;
+  right: 4px;
+  bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  text-shadow: none;
+  pointer-events: none;
 }
 
 .cancha-card strong,
@@ -1021,4 +1029,80 @@ tr.fila { display: table-row; }
   margin: 0;
   color: #5c6d63;
   font-size: 13px;
+}
+
+.demo-banner,
+.license-lock-banner {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.demo-banner {
+  background: linear-gradient(135deg, #7c2d12 0%, #ea580c 100%);
+  color: #fff7ed;
+}
+
+.demo-banner strong { color: #fff; }
+
+.demo-banner[data-severity="warn"] {
+  background: linear-gradient(135deg, #991b1b 0%, #dc2626 100%);
+}
+
+.license-lock-banner {
+  background: #7f1d1d;
+  color: #fff;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(14, 28, 20, 0.46);
+}
+
+.modal[hidden] { display: none; }
+
+.modal-contenido {
+  width: min(460px, 100%);
+  padding: 22px 20px 18px;
+  border-radius: 16px;
+  background: var(--papel);
+  box-shadow: 0 18px 50px rgba(16, 33, 23, 0.22);
+}
+
+.modal-contenido h2 { margin: 0 0 8px; }
+
+.modal-contenido .ayuda { margin: 0 0 12px; color: var(--suave); }
+
+.modal-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.licencia-panel {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--linea);
+  border-radius: 12px;
+  background: var(--papel);
+}
+
+.licencia-panel h2 { margin-top: 0; }
+
+button.primario {
+  background: var(--verde);
+  border-color: var(--verde);
+  color: #fff;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

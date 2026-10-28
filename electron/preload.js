@@ -10,4 +10,11 @@ contextBridge.exposeInMainWorld("canchas", {
   guardarCancha: (pedido) => ipcRenderer.invoke("guardar-cancha", pedido),
   guardarAccesorio: (pedido) => ipcRenderer.invoke("guardar-accesorio", pedido),
   guardarComision: (pedido) => ipcRenderer.invoke("guardar-comision", pedido),
+  licencia: {
+    getStatus: () => ipcRenderer.invoke("license:getStatus"),
+    getEdition: () => ipcRenderer.invoke("app:getEditionStatus"),
+    activate: (licenseKey, meta) => ipcRenderer.invoke("license:activate", licenseKey, meta || {}),
+    validateOnline: () => ipcRenderer.invoke("license:validateOnline"),
+    heartbeat: () => ipcRenderer.invoke("license:heartbeat"),
+  },
 });

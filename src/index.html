@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <div id="demo-banner" class="demo-banner" hidden></div>
+  <div id="license-lock-banner" class="license-lock-banner" hidden></div>
   <div class="app">
     <aside class="sidebar">
       <header class="marca">
@@ -27,6 +29,20 @@
     </aside>
     <section class="lienzo" id="lienzo"></section>
     <aside class="panel" id="panel"></aside>
+  </div>
+  <div id="modal-licencia" class="modal" hidden>
+    <div class="modal-contenido" role="dialog" aria-modal="true" aria-labelledby="modal-licencia-titulo">
+      <h2 id="modal-licencia-titulo">Activar licencia</h2>
+      <p class="ayuda">Ingresá la clave comercial provista para habilitar el sistema en este equipo.</p>
+      <label for="modal-license-key">Clave de licencia
+        <input type="text" id="modal-license-key" placeholder="Ej: LIC-ABCD-1234" autocomplete="off">
+      </label>
+      <p id="modal-licencia-error" class="deuda"></p>
+      <div class="modal-acciones">
+        <button type="button" class="primario" id="btn-activar-licencia">Activar licencia</button>
+        <button type="button" id="btn-cerrar-licencia">Cancelar</button>
+      </div>
+    </div>
   </div>
   <script src="renderer.js"></script>
 </body>

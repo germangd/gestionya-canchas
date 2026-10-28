@@ -17,4 +17,11 @@ window.canchas = {
   guardarCancha: (pedido) => enviar("/api/guardar-cancha", pedido),
   guardarAccesorio: (pedido) => enviar("/api/guardar-accesorio", pedido),
   guardarComision: (pedido) => enviar("/api/guardar-comision", pedido),
+  licencia: {
+    getStatus: async () => ({ status: "ok", valid: true, mode: "development", reason: null, signatureVerified: true }),
+    getEdition: async () => ({ status: "ok", isDemo: false, daysLeft: null }),
+    activate: async () => ({ status: "error", message: "La vista previa no activa licencias." }),
+    validateOnline: async () => ({ status: "error", message: "La vista previa no revalida licencias." }),
+    heartbeat: async () => ({ status: "ok" }),
+  },
 };

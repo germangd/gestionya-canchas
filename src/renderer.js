@@ -10,6 +10,8 @@ let seleccionId = null;
 let canchaEditId = null;
 let accesorioEditId = null;
 let aviso = "";
+let licencia = { mode: "development", reason: null, valid: true, signatureVerified: true };
+let edicion = { isDemo: false, daysLeft: null };
 let mesFiltro = null;
 
 const pesos = new Intl.NumberFormat("es-AR", {
@@ -142,10 +144,177 @@ function leyenda() {
   return nodo;
 }
 
+function licenciaBloqueada() {
+  return licencia.mode === "blocked" || licencia.mode === "read_only";
+}
+
+function motivoLicencia(reason) {
+  const motivos = {
+    NO_LOCAL_LICENSE: "Ingresá tu clave para activar la licencia.",
+    DEVICE_MISMATCH: "La licencia no corresponde a este equipo.",
+    INVALID_TOKEN: "La clave no es válida.",
+    INVALID_SIGNATURE: "La licencia no superó la verificación.",
+    NO_VERIFY_KEY: "Esta copia no puede verificar la licencia.",
+    TOKEN_EXPIRED_OUT_OF_GRACE: "La licencia venció.",
+  };
+  return motivos[reason] || reason || "";
+}
+
+function etiquetaLicencia() {
+  const etiquetas = {
+    full: "Activa",
+    demo_trial: "Prueba demo",
+    development: "Desarrollo",
+    grace: "Período de gracia",
+    read_only: "Solo lectura",
+    blocked: "Sin activar",
+  };
+  return etiquetas[licencia.mode] || "Desconocido";
+}
+
+function detalleLicencia() {
+  const mode = licencia.mode;
+  if (mode === "full") {
+    return licencia.signatureVerified === false
+      ? "Licencia válida (token legacy HS256). Abrí online una vez para migrar a RS256."
+      : "Licencia validada con firma RS256. Todas las funciones habilitadas.";
+  }
+  if (mode === "demo_trial") {
+    const dias = Number(edicion.daysLeft);
+    const resto = Number.isFinite(dias)
+      ? ` Quedan ${dias === 1 ? "1 día" : `${Math.max(0, Math.floor(dias))} días`} de prueba.`
+      : "";
+    return `Todas las funciones habilitadas durante el periodo de prueba.${resto} Podés ingresar una licencia comercial en cualquier momento.`;
+  }
+  if (mode === "development") return "Esta copia de desarrollo no pide clave. El instalador final sí la pide.";
+  if (mode === "grace") return "Sincronizá online para renovar la licencia.";
+  if (mode === "read_only") return "Los alquileres, cobros y cambios de configuración están bloqueados hasta revalidar.";
+  if (mode === "blocked") return motivoLicencia(licencia.reason) || "Ingresá tu clave para activar la licencia.";
+  return "No se pudo determinar estado de licencia.";
+}
+
+function pintarAvisosLicencia() {
+  const demo = document.getElementById("demo-banner");
+  const candado = document.getElementById("license-lock-banner");
+  if (demo) {
+    if (edicion.isDemo && licencia.mode === "demo_trial") {
+      const dias = Number(edicion.daysLeft);
+      const seguros = Number.isFinite(dias) ? Math.max(0, Math.floor(dias)) : null;
+      const texto = seguros === 1 ? "1 día" : `${seguros} días`;
+      demo.innerHTML = `Versión DEMO activa — quedan <strong>${texto}</strong> para el vencimiento.`;
+      demo.hidden = false;
+      if (seguros !== null && seguros <= 2) demo.dataset.severity = "warn";
+      else delete demo.dataset.severity;
+    } else {
+      demo.hidden = true;
+      demo.textContent = "";
+      delete demo.dataset.severity;
+    }
+  }
+  if (candado) {
+    if (licenciaBloqueada()) {
+      candado.hidden = false;
+      candado.textContent = licencia.mode === "blocked"
+        ? "Sin licencia activa: los alquileres, los cobros y la configuración están bloqueados hasta activar en Configuración."
+        : "Licencia en modo solo lectura: no se pueden registrar cambios.";
+    } else {
+      candado.hidden = true;
+      candado.textContent = "";
+    }
+  }
+}
+
+function abrirModalLicencia() {
+  const modal = document.getElementById("modal-licencia");
+  const error = document.getElementById("modal-licencia-error");
+  if (error) error.textContent = "";
+  if (modal) modal.hidden = false;
+  document.getElementById("modal-license-key")?.focus();
+}
+
+function cerrarModalLicencia() {
+  const modal = document.getElementById("modal-licencia");
+  if (modal) modal.hidden = true;
+}
+
+function aplicarEstadoLicencia(respuesta) {
+  if (respuesta?.status !== "ok") return;
+  licencia = {
+    valid: !!respuesta.valid,
+    mode: respuesta.mode || "unknown",
+    reason: respuesta.reason || null,
+    signatureVerified: !!respuesta.signatureVerified,
+  };
+}
+
+async function sincronizarLicencia() {
+  if (!window.canchas?.licencia) return;
+  try {
+    aplicarEstadoLicencia(await window.canchas.licencia.getStatus());
+    try {
+      await window.canchas.licencia.heartbeat();
+    } catch (_) {}
+    aplicarEstadoLicencia(await window.canchas.licencia.getStatus());
+    const edition = await window.canchas.licencia.getEdition();
+    if (edition?.status === "ok") edicion = edition;
+  } catch (_) {}
+  pintarAvisosLicencia();
+}
+
+async function activarLicenciaDesdeModal() {
+  const input = document.getElementById("modal-license-key");
+  const error = document.getElementById("modal-licencia-error");
+  const botonActivar = document.getElementById("btn-activar-licencia");
+  const clave = (input?.value || "").trim();
+  if (!clave) {
+    if (error) error.textContent = "Ingresá una clave de licencia";
+    return;
+  }
+  if (botonActivar) botonActivar.disabled = true;
+  try {
+    const respuesta = await window.canchas.licencia.activate(clave, { device_name: "GestiónYa Canchas" });
+    if (respuesta?.status !== "ok") throw new Error(respuesta?.message || "No se pudo activar la licencia");
+    if (input) input.value = "";
+    await sincronizarLicencia();
+    cerrarModalLicencia();
+    aviso = "Licencia activada correctamente.";
+    pintar();
+  } catch (err) {
+    if (error) error.textContent = `No se pudo activar: ${err.message}`;
+  } finally {
+    if (botonActivar) botonActivar.disabled = false;
+  }
+}
+
+async function revalidarLicenciaAhora() {
+  try {
+    const respuesta = await window.canchas.licencia.validateOnline();
+    if (respuesta?.status !== "ok") throw new Error(respuesta?.message || "Falló la validación online");
+    await sincronizarLicencia();
+    aviso = "Licencia revalidada.";
+    pintar();
+  } catch (err) {
+    aviso = `No se pudo revalidar: ${err.message}`;
+    pintar();
+  }
+}
+
+function frenarPorLicencia() {
+  if (!licenciaBloqueada()) return false;
+  aviso = licencia.mode === "blocked"
+    ? "Sin licencia activa: activala en Configuración."
+    : "Licencia en modo solo lectura.";
+  if (licencia.mode === "blocked") abrirModalLicencia();
+  pintar();
+  return true;
+}
+
 async function cargar() {
+  await sincronizarLicencia();
   snapshot = await window.canchas.estado(fecha || undefined);
   fecha = snapshot.fecha;
   if (!snapshot.horas.includes(hora)) hora = snapshot.horas.includes("18:00") ? "18:00" : snapshot.horas[0];
+  if (licencia.mode === "blocked") abrirModalLicencia();
   pintar();
 }
 
@@ -198,7 +367,9 @@ function tarjetaCancha(cancha) {
   const clases = clasesEstado(celda.estado, "cancha-card");
   if (cancha.id === seleccionId) clases.push("seleccionada");
   const tarjeta = boton("", clases.join(" "), { id: cancha.id });
-  tarjeta.append(el("strong", "", cancha.nombre), el("span", "", textoEstado(celda.estado)));
+  const pie = el("div", "cancha-pie");
+  pie.append(el("strong", "", cancha.nombre), el("span", "", textoEstado(celda.estado)));
+  tarjeta.append(pie);
   return tarjeta;
 }
 
@@ -312,6 +483,7 @@ function formularioLibre(cancha) {
   medio.append(select);
   const error = el("strong", "deuda", "");
   const registrar = boton("Registrar alquiler", "registrar");
+  registrar.disabled = licenciaBloqueada();
   registrar.addEventListener("click", () => registrarAlquiler(cancha, input, select, error, registrar));
   panel.append(busqueda, sugerencias, lista, cuenta, medio, error, registrar);
 }
@@ -376,8 +548,14 @@ function formularioAlquilada(turno) {
     el("p", "", `Accesorios: ${nombres.length ? nombres.join(", ") : "Sin accesorios"}`),
     el("p", "", `Total: ${dinero(turno.monto)}`)
   );
-  if (!turno.pagado) panel.append(boton("Cobrar", "primario", { cobrarTurno: turno.id }));
-  panel.append(boton("Anular alquiler", "anular", { cancelarTurno: turno.id }));
+  if (!turno.pagado) {
+    const cobrar = boton("Cobrar", "primario", { cobrarTurno: turno.id });
+    cobrar.disabled = licenciaBloqueada();
+    panel.append(cobrar);
+  }
+  const anular = boton("Anular alquiler", "anular", { cancelarTurno: turno.id });
+  anular.disabled = licenciaBloqueada();
+  panel.append(anular);
 }
 
 function formularioBloqueada() {
@@ -577,7 +755,23 @@ function pintarResumen() {
 
 function pintarConfig() {
   const raiz = el("section", "config");
-  raiz.append(el("h2", "", "Canchas"));
+  const panelLicencia = el("section", "licencia-panel");
+  const estado = el("p", "");
+  estado.append(document.createTextNode("Estado actual: "), el("strong", "", etiquetaLicencia()));
+  const acciones = el("div", "modal-acciones");
+  const activar = boton("Activar / cambiar clave", "primario");
+  activar.addEventListener("click", abrirModalLicencia);
+  const revalidar = boton("Revalidar online");
+  revalidar.addEventListener("click", () => revalidarLicenciaAhora());
+  acciones.append(activar, revalidar);
+  panelLicencia.append(
+    el("h2", "", "Licencia comercial"),
+    estado,
+    el("p", "ayuda", detalleLicencia()),
+    el("p", "ayuda", "La activación y la revalidación usan el servicio de licencias de GestiónYa. La dirección técnica no se muestra acá por seguridad; si necesitás soporte, contactá al proveedor."),
+    acciones
+  );
+  raiz.append(panelLicencia, el("h2", "", "Canchas"));
   const formCancha = document.createElement("form");
   formCancha.id = "form-cancha";
   if (canchaEditId) formCancha.dataset.id = canchaEditId;
@@ -739,12 +933,14 @@ app.addEventListener("click", async (evento) => {
   }
   const cobrarTurno = evento.target.closest("[data-cobrar-turno]");
   if (cobrarTurno) {
+    if (frenarPorLicencia()) return;
     const respuesta = await window.canchas.cobrarTurno(cobrarTurno.dataset.cobrarTurno);
     if (respuesta.ok) aplicar(respuesta.estado);
     return;
   }
   const cancelar = evento.target.closest("[data-cancelar-turno]");
   if (cancelar) {
+    if (frenarPorLicencia()) return;
     aviso = "";
     const respuesta = await window.canchas.cancelar(cancelar.dataset.cancelarTurno);
     if (respuesta.ok) aplicar(respuesta.estado);
@@ -752,6 +948,7 @@ app.addEventListener("click", async (evento) => {
   }
   const cobrarCuota = evento.target.closest("[data-cobrar-cuota]");
   if (cobrarCuota) {
+    if (frenarPorLicencia()) return;
     const respuesta = await window.canchas.cobrarCuota(cobrarCuota.dataset.cobrarCuota, fecha);
     if (!respuesta.ok) {
       cobrarCuota.textContent = respuesta.error;
@@ -793,6 +990,7 @@ app.addEventListener("submit", async (evento) => {
   const form = evento.target;
   if (!(form instanceof HTMLFormElement)) return;
   evento.preventDefault();
+  if (frenarPorLicencia()) return;
   const datos = new FormData(form);
   if (form.id === "form-cancha") {
     const respuesta = await window.canchas.guardarCancha({
@@ -841,6 +1039,12 @@ app.addEventListener("submit", async (evento) => {
     if (!respuesta.ok) return mostrarError(form, respuesta.error);
     aplicar(respuesta.estado);
   }
+});
+
+document.getElementById("btn-activar-licencia")?.addEventListener("click", activarLicenciaDesdeModal);
+document.getElementById("btn-cerrar-licencia")?.addEventListener("click", cerrarModalLicencia);
+document.getElementById("modal-licencia")?.addEventListener("click", (evento) => {
+  if (evento.target.id === "modal-licencia") cerrarModalLicencia();
 });
 
 cargar();
