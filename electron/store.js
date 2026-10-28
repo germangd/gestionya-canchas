@@ -54,16 +54,17 @@ function semilla(hoy) {
   const ciclo = `${anio}-03`;
   return {
     canchas: [
-      { id: "futbol-8", nombre: "Fútbol 8", deporte: "Fútbol", precio: 22000 },
+      { id: "futbol-8", nombre: "Fútbol 8", deporte: "Fútbol", precio: 28000 },
       { id: "futbol-5-a", nombre: "Fútbol 5 A", deporte: "Fútbol", precio: 14000, dentroDe: "futbol-8" },
       { id: "futbol-5-b", nombre: "Fútbol 5 B", deporte: "Fútbol", precio: 14000, dentroDe: "futbol-8" },
+      { id: "futbol-5-c", nombre: "Fútbol 5 C", deporte: "Fútbol", precio: 14000, dentroDe: "futbol-8" },
       { id: "voleibol", nombre: "Vóleibol", deporte: "Vóleibol", precio: 15000, espacioId: "espacio-voley" },
       { id: "handbol", nombre: "Hándbol", deporte: "Hándbol", precio: 15000, espacioId: "espacio-voley" },
     ],
     accesorios: [
       { id: "pelota-futbol", nombre: "Pelota de fútbol", precio: 1500 },
-      { id: "pelota-voley", nombre: "Pelota de vóley", precio: 1500 },
-      { id: "pelota-handbol", nombre: "Pelota de hándbol", precio: 1600 },
+      { id: "pelota-voley", nombre: "Pelota de vóley", precio: 1000 },
+      { id: "pelota-handbol", nombre: "Pelota de hándbol", precio: 1000 },
     ],
     comisionDirectiva: 10,
     clientes: [
@@ -71,20 +72,7 @@ function semilla(hoy) {
       { id: "c2", nombre: "Ana López", telefono: "221 555-0190" },
       { id: "c3", nombre: "Diego Sosa", telefono: "221 555-0118" },
     ],
-    turnos: [
-      {
-        id: "t1",
-        canchaId: "futbol-5-a",
-        fecha: hoy,
-        hora: "18:00",
-        clienteId: "c1",
-        accesorios: [],
-        metodo: "efectivo",
-        monto: 14000,
-        comision: 1400,
-        pagado: true,
-      },
-    ],
+    turnos: [],
     alumnos: [
       {
         id: "a1", nombre: "Luca Gómez", cuota: 25000, vence: 5,
@@ -116,8 +104,8 @@ function normalizar(base) {
   if (!Array.isArray(base.accesorios)) {
     base.accesorios = [
       { id: "pelota-futbol", nombre: "Pelota de fútbol", precio: 1500 },
-      { id: "pelota-voley", nombre: "Pelota de vóley", precio: 1500 },
-      { id: "pelota-handbol", nombre: "Pelota de hándbol", precio: 1600 },
+      { id: "pelota-voley", nombre: "Pelota de vóley", precio: 1000 },
+      { id: "pelota-handbol", nombre: "Pelota de hándbol", precio: 1000 },
     ];
   }
   if (!Number.isFinite(Number(base.comisionDirectiva))) base.comisionDirectiva = 10;
@@ -329,6 +317,7 @@ function crearStore(archivo) {
       comisionDirectiva: Number(base.comisionDirectiva) || 0,
       clientes: [...base.clientes].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
       alumnos: base.alumnos.map((item) => estadoAlumno(item, dia)),
+      turnos: base.turnos.map((item) => enriquecerTurno(item)),
       resumen: resumen(dia),
     };
   }

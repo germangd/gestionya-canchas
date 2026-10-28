@@ -9,6 +9,8 @@ let seccion = "canchas";
 let seleccionId = null;
 let canchaEditId = null;
 let accesorioEditId = null;
+let aviso = "";
+let mesFiltro = null;
 
 const pesos = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -24,19 +26,6 @@ const metodos = [
 
 function dinero(valor) {
   return pesos.format(valor || 0);
-}
-
-function moverFecha(dias) {
-  const [anio, mes, dia] = fecha.split("-").map(Number);
-  const siguiente = new Date(anio, mes - 1, dia + dias);
-  const m = String(siguiente.getMonth() + 1).padStart(2, "0");
-  const d = String(siguiente.getDate()).padStart(2, "0");
-  return `${siguiente.getFullYear()}-${m}-${d}`;
-}
-
-function fechaCorta(iso) {
-  const [anio, mes, dia] = iso.split("-");
-  return `${dia}/${mes}/${anio}`;
 }
 
 function el(tag, clase, texto) {
@@ -69,10 +58,6 @@ function celdaDe(cancha) {
   return cancha.celdas.find((item) => item.hora === hora) || { estado: "libre", hora };
 }
 
-function esGrande(cancha) {
-  return snapshot.canchas.some((otra) => otra.dentroDe === cancha.id);
-}
-
 function textoEstado(estado) {
   if (estado === "alquilada") return "Alquilada";
   if (estado === "bloqueada") return "Bloqueada";
@@ -87,60 +72,58 @@ function comisionDe(precio) {
   return Math.round(precio * (Number(snapshot.comisionDirectiva) || 0) / 100);
 }
 
-function grupos(canchas) {
-  const usadas = new Set();
-  const lista = [];
-  const grandes = canchas.filter((cancha) => canchas.some((otra) => otra.dentroDe === cancha.id));
-  for (const grande of grandes) {
-    const chicas = canchas.filter((cancha) => cancha.dentroDe === grande.id);
-    lista.push({ titulo: "Cancha grande", canchas: [grande, ...chicas] });
-    usadas.add(grande.id);
-    for (const chica of chicas) usadas.add(chica.id);
-  }
-  const porEspacio = new Map();
-  for (const cancha of canchas) {
-    if (usadas.has(cancha.id) || !cancha.espacioId) continue;
-    if (!porEspacio.has(cancha.espacioId)) porEspacio.set(cancha.espacioId, []);
-    porEspacio.get(cancha.espacioId).push(cancha);
-  }
-  for (const grupo of porEspacio.values()) {
-    if (grupo.length < 2) continue;
-    lista.push({ titulo: "Misma cancha", canchas: grupo });
-    for (const cancha of grupo) usadas.add(cancha.id);
-  }
-  const sueltas = canchas.filter((cancha) => !usadas.has(cancha.id));
-  if (sueltas.length) lista.push({ titulo: "Canchas", canchas: sueltas });
-  return lista;
-}
-
 function barraFecha() {
   const barra = el("div", "fecha");
-  const linea = el("span");
-  const anterior = boton("←", "", { fecha: "-1" });
-  const siguiente = boton("→", "", { fecha: "1" });
-  anterior.setAttribute("aria-label", "Día anterior");
-  siguiente.setAttribute("aria-label", "Día siguiente");
-  linea.append(anterior, document.createTextNode(` ${fechaCorta(fecha)} `), siguiente, boton("Hoy", "", { fecha: "hoy" }));
-  barra.append(el("small", "", "Fecha"), linea);
+  barra.append(el("small", "", "Fecha"));
+  const input = document.createElement("input");
+  input.type = "date";
+  input.className = "fecha-input";
+  input.value = fecha;
+  input.setAttribute("aria-label", "Fecha");
+  input.addEventListener("change", async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.value)) return;
+    fecha = input.value;
+    aviso = "";
+    await cargar();
+  });
+  barra.append(input);
   return barra;
 }
 
 function cabecera(cancha, estado) {
-  const cabeza = el("header");
-  const texto = el("div");
-  texto.append(el("h2", "", cancha.nombre), el("p", "", `${cancha.deporte} · ${dinero(cancha.precio)} · ${hora}`));
-  cabeza.append(texto, el("span", estado === "libre" ? "badge" : `badge ${estado}`, textoEstado(estado)));
+  const cabeza = el("div", "cabecera");
+  cabeza.append(
+    el("h2", "", cancha.nombre),
+    el("p", "precio", `${cancha.deporte} · ${dinero(cancha.precio)} el turno`),
+    el("span", `badge ${estado}`, textoEstado(estado))
+  );
   return cabeza;
 }
 
+function horaOcupada(item) {
+  return snapshot.canchas.some((cancha) =>
+    cancha.celdas.some((celda) => celda.hora === item && celda.estado === "alquilada")
+  );
+}
+
 function filaHoras() {
-  const fila = el("div", "horas");
-  for (const item of snapshot.horas) {
-    const nodo = boton(item, item === hora ? "hora activa" : "hora", { hora: item });
-    nodo.setAttribute("aria-pressed", item === hora ? "true" : "false");
-    fila.append(nodo);
+  const manana = snapshot.horas.filter((item) => item <= "18:00");
+  const noche = snapshot.horas.filter((item) => item > "18:00");
+  const grilla = el("div", "horas-grilla");
+  for (const grupo of [manana, noche]) {
+    if (!grupo.length) continue;
+    const fila = el("div", "horas");
+    for (const item of grupo) {
+      const clases = ["hora"];
+      if (item === hora) clases.push("activa");
+      if (horaOcupada(item)) clases.push("ocupada");
+      const nodo = boton(item, clases.join(" "), { hora: item });
+      nodo.setAttribute("aria-pressed", item === hora ? "true" : "false");
+      fila.append(nodo);
+    }
+    grilla.append(fila);
   }
-  return fila;
+  return grilla;
 }
 
 function leyenda() {
@@ -172,12 +155,23 @@ function aplicar(estado) {
   pintar();
 }
 
+function asegurarSeleccion() {
+  if (!snapshot) return;
+  if (seleccionId && snapshot.canchas.some((item) => item.id === seleccionId)) return;
+  const preferida = snapshot.canchas.find((item) => item.id === "futbol-5-a")
+    || snapshot.canchas.find((item) => item.dentroDe)
+    || snapshot.canchas[0];
+  seleccionId = preferida ? preferida.id : null;
+}
+
 function pintar() {
+  asegurarSeleccion();
   document.querySelectorAll(".nav-btn").forEach((item) => {
     item.classList.toggle("activo", item.dataset.vista === seccion);
   });
   app.dataset.vista = seccion;
   lienzo.replaceChildren();
+  if (aviso) lienzo.append(el("p", "aviso", aviso));
   if (seccion === "canchas") {
     if (!panel.isConnected) app.append(panel);
     pintarCanchas();
@@ -192,24 +186,69 @@ function pintar() {
   if (seccion === "config") pintarConfig();
 }
 
+function clasesEstado(estado, base) {
+  const clases = [base];
+  if (estado === "alquilada" || estado === "bloqueada") clases.push(estado);
+  else clases.push("libre");
+  return clases;
+}
+
+function tarjetaCancha(cancha) {
+  const celda = celdaDe(cancha);
+  const clases = clasesEstado(celda.estado, "cancha-card");
+  if (cancha.id === seleccionId) clases.push("seleccionada");
+  const tarjeta = boton("", clases.join(" "), { id: cancha.id });
+  tarjeta.append(el("strong", "", cancha.nombre), el("span", "", textoEstado(celda.estado)));
+  return tarjeta;
+}
+
 function pintarCanchas() {
   lienzo.append(barraFecha(), filaHoras(), leyenda());
   const mapa = el("div", "mapa");
-  for (const grupo of grupos(snapshot.canchas)) {
-    const caja = el("section", "grupo");
-    caja.append(el("h2", "", grupo.titulo));
-    for (const cancha of grupo.canchas) {
-      const celda = celdaDe(cancha);
-      const clases = ["cancha-card"];
-      if (esGrande(cancha)) clases.push("grande");
-      if (celda.estado === "alquilada") clases.push("alquilada");
-      if (celda.estado === "bloqueada") clases.push("bloqueada");
-      if (cancha.id === seleccionId) clases.push("seleccionada");
-      const tarjeta = boton("", clases.join(" "), { id: cancha.id });
-      tarjeta.append(el("strong", "", cancha.nombre), el("span", "", textoEstado(celda.estado)));
-      caja.append(tarjeta);
+  const predio = el("section", "predio");
+  predio.append(el("h2", "", "Predio"));
+  const canchas = snapshot.canchas;
+  const usadas = new Set();
+  const grandes = canchas.filter((cancha) => canchas.some((otra) => otra.dentroDe === cancha.id));
+  for (const grande of grandes) {
+    const celda = celdaDe(grande);
+    const clases = clasesEstado(celda.estado, "marco");
+    if (grande.id === seleccionId) clases.push("seleccionada");
+    const marco = boton("", clases.join(" "), { id: grande.id });
+    marco.append(el("span", "marco-nombre", grande.nombre));
+    const hijas = el("div", "hijas");
+    for (const chica of canchas.filter((item) => item.dentroDe === grande.id)) {
+      hijas.append(tarjetaCancha(chica));
+      usadas.add(chica.id);
     }
-    mapa.append(caja);
+    marco.append(hijas);
+    marco.addEventListener("pointerdown", (evento) => {
+      if (evento.target.closest(".cancha-card")) return;
+      seleccionId = grande.id;
+      aviso = "";
+      pintar();
+    });
+    predio.append(marco, el("p", "chip", `${grande.nombre}: ${textoEstado(celda.estado)}`));
+    usadas.add(grande.id);
+  }
+  const porEspacio = new Map();
+  for (const cancha of canchas) {
+    if (usadas.has(cancha.id) || !cancha.espacioId) continue;
+    const companeras = canchas.filter((otra) => otra.espacioId === cancha.espacioId);
+    if (companeras.length < 2) continue;
+    if (!porEspacio.has(cancha.espacioId)) porEspacio.set(cancha.espacioId, []);
+    porEspacio.get(cancha.espacioId).push(cancha);
+    usadas.add(cancha.id);
+  }
+  for (const cancha of canchas) {
+    if (!usadas.has(cancha.id)) predio.append(tarjetaCancha(cancha));
+  }
+  mapa.append(predio);
+  for (const grupo of porEspacio.values()) {
+    const misma = el("section", "misma");
+    misma.append(el("h2", "", "Misma cancha"));
+    for (const cancha of grupo) misma.append(tarjetaCancha(cancha));
+    mapa.append(misma);
   }
   lienzo.append(mapa);
 }
@@ -225,7 +264,7 @@ function pintarPanel() {
   panel.append(cabecera(cancha, celda.estado));
   if (celda.estado === "libre") formularioLibre(cancha);
   if (celda.estado === "alquilada") formularioAlquilada(celda.turno);
-  if (celda.estado === "bloqueada") formularioBloqueada(celda);
+  if (celda.estado === "bloqueada") formularioBloqueada();
 }
 
 function formularioLibre(cancha) {
@@ -254,19 +293,17 @@ function formularioLibre(cancha) {
     check.type = "checkbox";
     check.value = accesorio.id;
     check.dataset.precio = String(accesorio.precio);
-    fila.append(check, el("span", "", accesorio.nombre), el("b", "", dinero(accesorio.precio)));
+    fila.append(check, el("span", "", `${accesorio.nombre} (${dinero(accesorio.precio)})`));
     lista.append(fila);
   }
 
   const cuenta = el("div", "subtotal");
   const extra = el("span", "", `Cancha ${dinero(cancha.precio)} + accesorios ${dinero(0)}`);
   extra.dataset.extra = "1";
-  const total = el("strong", "", dinero(cancha.precio));
-  total.dataset.total = "1";
-  const nota = el("span", "comision", `Comisión directiva (${snapshot.comisionDirectiva}% solo de la cancha)`);
+  const nota = el("span", "comision", `Comisión directiva (${snapshot.comisionDirectiva}% solo de la cancha):`);
   const comision = el("strong", "", dinero(comisionDe(cancha.precio)));
   comision.dataset.comision = "1";
-  cuenta.append(extra, total, nota, comision);
+  cuenta.append(extra, nota, comision);
   const medio = el("label", "", "Medio de pago");
   const select = document.createElement("select");
   for (const item of metodos) select.append(opcion(item[0], item[1]));
@@ -301,11 +338,10 @@ function accesoriosMarcados() {
 
 function actualizarCuenta() {
   const cancha = canchaSeleccionada();
-  if (!cancha || !panel.querySelector("[data-total]")) return;
+  if (!cancha || !panel.querySelector("[data-comision]")) return;
   const extra = [...panel.querySelectorAll(".accesorio input:checked")]
     .reduce((suma, input) => suma + Number(input.dataset.precio), 0);
   panel.querySelector("[data-extra]").textContent = `Cancha ${dinero(cancha.precio)} + accesorios ${dinero(extra)}`;
-  panel.querySelector("[data-total]").textContent = dinero(cancha.precio + extra);
   panel.querySelector("[data-comision]").textContent = dinero(comisionDe(cancha.precio));
 }
 
@@ -327,33 +363,23 @@ async function registrarAlquiler(cancha, input, select, error, registrar) {
     error.textContent = respuesta.error;
     return;
   }
+  aviso = "Alquiler registrado.";
   aplicar(respuesta.estado);
 }
 
-function textoAccesorios(turno) {
-  const lista = turno.accesorios || [];
-  if (!lista.length) return "Sin accesorios";
-  return lista.map((item) => `${item.nombre} (${dinero(item.precio)})`).join(", ");
-}
-
 function formularioAlquilada(turno) {
+  const nombres = (turno.accesorios || []).map((item) => item.nombre);
   panel.append(
-    el("p", "", turno.cliente),
-    el("p", "", turno.telefono || "Sin teléfono"),
-    el("p", "", textoAccesorios(turno)),
-    el("p", "", dinero(turno.monto)),
-    el("p", "", `${etiquetaMetodo(turno.metodo)} · ${turno.pagado ? "Cobrado" : "Pendiente de cobro"}`)
+    el("p", "", `Cliente: ${turno.cliente}`),
+    el("p", "", `Accesorios: ${nombres.length ? nombres.join(", ") : "Sin accesorios"}`),
+    el("p", "", `Total: ${dinero(turno.monto)}`)
   );
   if (!turno.pagado) panel.append(boton("Cobrar", "primario", { cobrarTurno: turno.id }));
-  panel.append(boton("Cancelar turno", "peligro", { cancelarTurno: turno.id }));
+  panel.append(boton("Anular alquiler", "anular", { cancelarTurno: turno.id }));
 }
 
-function formularioBloqueada(celda) {
-  const motivo = celda.bloqueadaPor;
-  const detalle = motivo.cliente
-    ? `${motivo.cancha} está alquilada a ${motivo.cliente}.`
-    : `Está bloqueada por ${motivo.cancha}.`;
-  panel.append(el("strong", "deuda", `No se puede registrar. ${detalle}`));
+function formularioBloqueada() {
+  panel.append(el("p", "", "Hay un alquiler en una cancha que comparte el mismo espacio. No se puede superponer."));
 }
 
 function tablaDe(filas) {
@@ -363,21 +389,91 @@ function tablaDe(filas) {
   return tabla;
 }
 
+function extraDe(turno) {
+  return (turno.accesorios || []).reduce((suma, item) => suma + (Number(item.precio) || 0), 0);
+}
+
+function mesVista() {
+  if (mesFiltro) return mesFiltro;
+  return (fecha || snapshot?.fecha || "").slice(0, 7);
+}
+
 function pintarAlquileres() {
-  lienzo.append(barraFecha(), el("h2", "", "Alquileres del día"));
-  const filas = snapshot.resumen.turnos.map((turno) => {
-    const fila = el("div", "fila");
-    fila.append(
-      el("strong", "", `${turno.hora} · ${turno.cliente}`),
-      el("span", "", turno.cancha),
-      el("span", "", turno.telefono || "Sin teléfono"),
-      el("span", "", textoAccesorios(turno)),
-      el("span", "", `${dinero(turno.monto)} · ${turno.pagado ? "Cobrado" : "Pendiente de cobro"}`),
-      el("span", "", `Comisión directiva ${dinero(turno.comision)}`)
-    );
-    return fila;
+  lienzo.append(el("h2", "", "Alquileres"));
+  const mes = mesVista();
+  const filtro = el("label", "mes");
+  filtro.append(el("small", "", "Mes"));
+  const input = document.createElement("input");
+  input.type = "month";
+  input.value = mes;
+  input.setAttribute("aria-label", "Mes");
+  input.addEventListener("change", () => {
+    if (!/^\d{4}-\d{2}$/.test(input.value)) return;
+    mesFiltro = input.value;
+    pintar();
   });
-  lienzo.append(tablaDe(filas));
+  filtro.append(input);
+  lienzo.append(filtro);
+
+  const turnos = (snapshot.turnos || []).filter((turno) => String(turno.fecha).startsWith(mes));
+  const cobrados = turnos.filter((turno) => turno.pagado);
+  const alquilerCanchas = cobrados.reduce((suma, turno) => suma + turno.monto - extraDe(turno), 0);
+  const accesorios = cobrados.reduce((suma, turno) => suma + extraDe(turno), 0);
+  const total = cobrados.reduce((suma, turno) => suma + turno.monto, 0);
+  const comision = cobrados.reduce((suma, turno) => suma + turno.comision, 0);
+  const tarjetas = el("div", "tarjetas");
+  for (const item of [
+    ["Alquiler de canchas", alquilerCanchas],
+    ["Accesorios", accesorios],
+    ["Total cobrado", total],
+    ["Comisión directiva", comision],
+  ]) {
+    const tarjeta = el("article");
+    tarjeta.append(el("span", "", item[0]), el("strong", "", dinero(item[1])));
+    tarjetas.append(tarjeta);
+  }
+  lienzo.append(
+    tarjetas,
+    el("p", "nota-comision", "La comisión se calcula solo sobre el precio de la cancha, sin los accesorios.")
+  );
+
+  const tabla = el("table", "tabla");
+  const thead = document.createElement("thead");
+  const encabezado = document.createElement("tr");
+  for (const titulo of ["Fecha", "Turno", "Cancha", "Cliente", "Cancha", "Accesorios", "Comisión", "Total", "Medio", ""]) {
+    encabezado.append(el("th", "", titulo));
+  }
+  thead.append(encabezado);
+  const tbody = document.createElement("tbody");
+  const ordenados = [...turnos].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.hora.localeCompare(b.hora));
+  if (!ordenados.length) {
+    const vacia = document.createElement("tr");
+    const celda = el("td", "", "Nada para mostrar en este mes.");
+    celda.colSpan = 10;
+    vacia.append(celda);
+    tbody.append(vacia);
+  }
+  for (const turno of ordenados) {
+    const fila = document.createElement("tr");
+    fila.className = "fila";
+    for (const texto of [
+      turno.fecha,
+      turno.hora,
+      turno.cancha,
+      turno.cliente,
+      dinero(turno.monto - extraDe(turno)),
+      dinero(extraDe(turno)),
+      dinero(turno.comision),
+      dinero(turno.monto),
+      etiquetaMetodo(turno.metodo),
+    ]) fila.append(el("td", "", texto));
+    const accion = document.createElement("td");
+    accion.append(boton("Anular", "", { cancelarTurno: turno.id }));
+    fila.append(accion);
+    tbody.append(fila);
+  }
+  tabla.append(thead, tbody);
+  lienzo.append(tabla);
 }
 
 function pintarClientes() {
@@ -618,21 +714,24 @@ app.addEventListener("click", async (evento) => {
     pintar();
     return;
   }
-  const fechaBtn = evento.target.closest("[data-fecha]");
-  if (fechaBtn) {
-    fecha = fechaBtn.dataset.fecha === "hoy" ? snapshot.hoy : moverFecha(Number(fechaBtn.dataset.fecha));
-    await cargar();
-    return;
-  }
   const horaBtn = evento.target.closest(".hora");
   if (horaBtn) {
     hora = horaBtn.dataset.hora;
+    aviso = "";
     pintar();
     return;
   }
   const tarjeta = evento.target.closest(".cancha-card");
   if (tarjeta) {
     seleccionId = tarjeta.dataset.id;
+    aviso = "";
+    pintar();
+    return;
+  }
+  const marco = evento.target.closest(".marco");
+  if (marco) {
+    seleccionId = marco.dataset.id;
+    aviso = "";
     pintar();
     return;
   }
@@ -644,6 +743,7 @@ app.addEventListener("click", async (evento) => {
   }
   const cancelar = evento.target.closest("[data-cancelar-turno]");
   if (cancelar) {
+    aviso = "";
     const respuesta = await window.canchas.cancelar(cancelar.dataset.cancelarTurno);
     if (respuesta.ok) aplicar(respuesta.estado);
     return;
