@@ -205,6 +205,7 @@ function tarjetaCancha(cancha) {
 function pintarCanchas() {
   lienzo.append(barraFecha(), filaHoras(), leyenda());
   const mapa = el("div", "mapa");
+  const chips = [];
   const predio = el("section", "predio");
   predio.append(el("h2", "", "Predio"));
   const canchas = snapshot.canchas;
@@ -228,7 +229,8 @@ function pintarCanchas() {
       aviso = "";
       pintar();
     });
-    predio.append(marco, el("p", "chip", `${grande.nombre}: ${textoEstado(celda.estado)}`));
+    predio.append(marco);
+    chips.push(el("p", "chip", `${grande.nombre}: ${textoEstado(celda.estado)}`));
     usadas.add(grande.id);
   }
   const porEspacio = new Map();
@@ -250,7 +252,7 @@ function pintarCanchas() {
     for (const cancha of grupo) misma.append(tarjetaCancha(cancha));
     mapa.append(misma);
   }
-  lienzo.append(mapa);
+  lienzo.append(mapa, ...chips);
 }
 
 function pintarPanel() {

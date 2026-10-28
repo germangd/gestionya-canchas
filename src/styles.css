@@ -198,7 +198,7 @@ select {
   overflow: auto;
 }
 
-.app:has(.panel) .lienzo { margin-right: 0; }
+.app:has(.panel) .lienzo { margin-right: 6px; }
 
 .aviso {
   width: 100%;
@@ -293,8 +293,7 @@ input.fecha-input {
 }
 
 .hora.activa.ocupada {
-  outline: 3px solid var(--naranja);
-  outline-offset: 2px;
+  outline: none;
 }
 
 .leyenda {
@@ -376,10 +375,10 @@ button.marco {
   display: block;
   width: 100%;
   min-width: 0;
-  border: 7px solid var(--verde);
-  border-radius: 3px;
-  padding: 14px 10px 10px;
-  background: transparent;
+  border: 8px solid var(--verde);
+  border-radius: 2px;
+  padding: 20px 8px 8px;
+  background: var(--verde);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -388,7 +387,7 @@ button.marco {
 
 .marco.libre {
   border-color: var(--verde);
-  background: transparent;
+  background: var(--verde);
 }
 
 .marco > .cartel,
@@ -422,7 +421,7 @@ button.marco {
 
 .marco.bloqueada {
   border-color: var(--rojo);
-  background: transparent;
+  background: var(--rojo);
 }
 
 .marco.alquilada {
@@ -514,11 +513,10 @@ button.marco {
   box-shadow: 0 1px 2px rgba(16, 33, 23, 0.05);
 }
 
-.mapa .chip {
-  position: absolute;
-  z-index: 2;
-  left: 0;
-  top: calc(100% + 12px);
+.mapa:has(.misma) { margin-bottom: 0; }
+
+.mapa + .chip {
+  margin-top: 12px;
 }
 
 .cancha-card {
@@ -621,7 +619,7 @@ button.marco {
 }
 
 .cancha-card.bloqueada {
-  background: var(--verde);
+  background: var(--rojo);
   color: #fff;
   opacity: 1;
   filter: none;

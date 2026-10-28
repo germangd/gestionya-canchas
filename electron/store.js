@@ -130,6 +130,13 @@ function crearStore(archivo) {
     if (datos) return datos;
     if (fs.existsSync(archivo)) {
       datos = normalizar(JSON.parse(fs.readFileSync(archivo, "utf8")));
+      if (datos.canchas.some((cancha) => cancha.id === "f5-norte" || cancha.id === "f8-norte")) {
+        const nueva = semilla(hoyISO());
+        datos.canchas = nueva.canchas;
+        datos.accesorios = nueva.accesorios;
+        datos.turnos = [];
+        guardar();
+      }
       return datos;
     }
     datos = semilla(hoyISO());
