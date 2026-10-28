@@ -8,7 +8,7 @@ function crearVentana() {
     height: 840,
     minWidth: 1024,
     minHeight: 680,
-    backgroundColor: "#10140f",
+    backgroundColor: "#f4f6f1",
     title: "GestiónYa Canchas",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -27,6 +27,9 @@ app.whenReady().then(() => {
   ipcMain.handle("cobrar-turno", (_evento, turnoId) => store.cobrarTurno(turnoId));
   ipcMain.handle("cobrar-cuota", (_evento, pedido) => store.cobrarCuota(pedido.alumnoId, pedido.fecha));
   ipcMain.handle("agregar-alumno", (_evento, pedido) => store.agregarAlumno(pedido.alumno, pedido.fecha));
+  ipcMain.handle("guardar-cancha", (_evento, pedido) => store.guardarCancha(pedido));
+  ipcMain.handle("guardar-accesorio", (_evento, pedido) => store.guardarAccesorio(pedido));
+  ipcMain.handle("guardar-comision", (_evento, pedido) => store.guardarComision(pedido));
   crearVentana();
 });
 

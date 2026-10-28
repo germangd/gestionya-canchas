@@ -2,10 +2,11 @@ const fs = require("fs");
 const path = require("path");
 
 const HORAS = [
-  "08:00", "09:00", "10:00", "11:00", "12:00", "13:00",
-  "14:00", "15:00", "16:00", "17:00", "18:00", "19:00",
-  "20:00", "21:00", "22:00", "23:00",
+  "10:00", "11:00", "12:00", "13:00", "14:00", "15:00",
+  "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
 ];
+
+const METODOS = ["efectivo", "transferencia", "tarjeta"];
 
 function hoyISO(fecha = new Date()) {
   const mes = String(fecha.getMonth() + 1).padStart(2, "0");
@@ -53,12 +54,18 @@ function semilla(hoy) {
   const ciclo = `${anio}-03`;
   return {
     canchas: [
-      { id: "f5-norte", nombre: "Norte", deporte: "Fútbol 5", grupo: "norte", precio: 18000 },
-      { id: "f8-norte", nombre: "Norte", deporte: "Fútbol 8", grupo: "norte", precio: 28000 },
-      { id: "voley-sur", nombre: "Sur", deporte: "Vóley", grupo: "sur", precio: 15000 },
-      { id: "hand-sur", nombre: "Sur", deporte: "Hándbol", grupo: "sur", precio: 15000 },
-      { id: "f5-este", nombre: "Este", deporte: "Fútbol 5", grupo: "este", precio: 18000 },
+      { id: "futbol-8", nombre: "Fútbol 8", deporte: "Fútbol", precio: 22000 },
+      { id: "futbol-5-a", nombre: "Fútbol 5 A", deporte: "Fútbol", precio: 14000, dentroDe: "futbol-8" },
+      { id: "futbol-5-b", nombre: "Fútbol 5 B", deporte: "Fútbol", precio: 14000, dentroDe: "futbol-8" },
+      { id: "voleibol", nombre: "Vóleibol", deporte: "Vóleibol", precio: 15000, espacioId: "espacio-voley" },
+      { id: "handbol", nombre: "Hándbol", deporte: "Hándbol", precio: 15000, espacioId: "espacio-voley" },
     ],
+    accesorios: [
+      { id: "pelota-futbol", nombre: "Pelota de fútbol", precio: 1500 },
+      { id: "pelota-voley", nombre: "Pelota de vóley", precio: 1500 },
+      { id: "pelota-handbol", nombre: "Pelota de hándbol", precio: 1600 },
+    ],
+    comisionDirectiva: 10,
     clientes: [
       { id: "c1", nombre: "Pablo Herrera", telefono: "221 555-0142" },
       { id: "c2", nombre: "Ana López", telefono: "221 555-0190" },
@@ -66,16 +73,16 @@ function semilla(hoy) {
     ],
     turnos: [
       {
-        id: "t1", canchaId: "f5-norte", fecha: hoy, hora: "18:00",
-        clienteId: "c1", pelota: true, metodo: "efectivo", monto: 20000, pagado: true,
-      },
-      {
-        id: "t2", canchaId: "voley-sur", fecha: hoy, hora: "19:00",
-        clienteId: "c2", pelota: false, metodo: "transferencia", monto: 15000, pagado: true,
-      },
-      {
-        id: "t3", canchaId: "f5-este", fecha: hoy, hora: "21:00",
-        clienteId: "c3", pelota: true, metodo: "tarjeta", monto: 20000, pagado: false,
+        id: "t1",
+        canchaId: "futbol-5-a",
+        fecha: hoy,
+        hora: "18:00",
+        clienteId: "c1",
+        accesorios: [],
+        metodo: "efectivo",
+        monto: 14000,
+        comision: 1400,
+        pagado: true,
       },
     ],
     alumnos: [
@@ -100,13 +107,41 @@ function semilla(hoy) {
   };
 }
 
+function normalizar(base) {
+  base.canchas = Array.isArray(base.canchas) ? base.canchas : [];
+  base.clientes = Array.isArray(base.clientes) ? base.clientes : [];
+  base.turnos = Array.isArray(base.turnos) ? base.turnos : [];
+  base.alumnos = Array.isArray(base.alumnos) ? base.alumnos : [];
+  base.cuotas = Array.isArray(base.cuotas) ? base.cuotas : [];
+  if (!Array.isArray(base.accesorios)) {
+    base.accesorios = [
+      { id: "pelota-futbol", nombre: "Pelota de fútbol", precio: 1500 },
+      { id: "pelota-voley", nombre: "Pelota de vóley", precio: 1500 },
+      { id: "pelota-handbol", nombre: "Pelota de hándbol", precio: 1600 },
+    ];
+  }
+  if (!Number.isFinite(Number(base.comisionDirectiva))) base.comisionDirectiva = 10;
+  for (const cancha of base.canchas) {
+    if (cancha.grupo && !cancha.espacioId) cancha.espacioId = `grupo-${cancha.grupo}`;
+    delete cancha.grupo;
+  }
+  for (const turno of base.turnos) {
+    if (!Array.isArray(turno.accesorios)) turno.accesorios = [];
+    if (!Number.isFinite(Number(turno.comision))) {
+      const lugar = base.canchas.find((item) => item.id === turno.canchaId);
+      turno.comision = Math.round((lugar?.precio || 0) * Number(base.comisionDirectiva) / 100);
+    }
+  }
+  return base;
+}
+
 function crearStore(archivo) {
   let datos = null;
 
   function leer() {
     if (datos) return datos;
     if (fs.existsSync(archivo)) {
-      datos = JSON.parse(fs.readFileSync(archivo, "utf8"));
+      datos = normalizar(JSON.parse(fs.readFileSync(archivo, "utf8")));
       return datos;
     }
     datos = semilla(hoyISO());
@@ -133,30 +168,68 @@ function crearStore(archivo) {
     return leer().turnos.find((item) => item.canchaId === canchaId && item.fecha === fecha && item.hora === hora) || null;
   }
 
-  function turnoQueBloquea(canchaId, fecha, hora) {
+  function mismasFisicas(canchaId) {
     const actual = cancha(canchaId);
-    if (!actual) return null;
-    return leer().turnos.find((item) => {
+    if (!actual) return new Set();
+    const grupo = new Set([actual.id]);
+    if (!actual.espacioId) return grupo;
+    for (const item of leer().canchas) {
+      if (item.espacioId && item.espacioId === actual.espacioId) grupo.add(item.id);
+    }
+    return grupo;
+  }
+
+  function sumarMismoEspacio(destino, canchaId) {
+    const actual = cancha(canchaId);
+    if (!actual?.espacioId) return;
+    for (const item of leer().canchas) {
+      if (item.espacioId === actual.espacioId) destino.add(item.id);
+    }
+  }
+
+  function canchasBloqueadasPor(origenId) {
+    const bloqueadas = new Set();
+    for (const idEspacio of mismasFisicas(origenId)) {
+      if (idEspacio !== origenId) bloqueadas.add(idEspacio);
+      const item = cancha(idEspacio);
+      if (item.dentroDe) {
+        bloqueadas.add(item.dentroDe);
+        sumarMismoEspacio(bloqueadas, item.dentroDe);
+      }
+      for (const otra of leer().canchas) {
+        if (otra.dentroDe !== idEspacio) continue;
+        bloqueadas.add(otra.id);
+        sumarMismoEspacio(bloqueadas, otra.id);
+        if (!otra.espacioId) continue;
+        for (const gemela of leer().canchas) {
+          if (gemela.espacioId === otra.espacioId && gemela.dentroDe) bloqueadas.add(gemela.dentroDe);
+        }
+      }
+    }
+    bloqueadas.delete(origenId);
+    return bloqueadas;
+  }
+
+  function turnosQueBloquean(canchaId, fecha, hora) {
+    return leer().turnos.filter((item) => {
       if (item.fecha !== fecha || item.hora !== hora || item.canchaId === canchaId) return false;
-      const otra = cancha(item.canchaId);
-      return otra && otra.grupo === actual.grupo;
-    }) || null;
+      return canchasBloqueadasPor(item.canchaId).has(canchaId);
+    });
   }
 
   function celda(canchaId, fecha, hora) {
     const propio = turnoEn(canchaId, fecha, hora);
-    if (propio) {
-      return { estado: "alquilada", turno: enriquecerTurno(propio) };
-    }
-    const bloqueo = turnoQueBloquea(canchaId, fecha, hora);
-    if (bloqueo) {
-      const otra = cancha(bloqueo.canchaId);
+    if (propio) return { estado: "alquilada", turno: enriquecerTurno(propio) };
+    const bloqueos = turnosQueBloquean(canchaId, fecha, hora);
+    if (bloqueos.length) {
+      const nombres = [...new Set(bloqueos.map((item) => cancha(item.canchaId)?.nombre).filter(Boolean))];
+      const persona = bloqueos.length === 1 ? cliente(bloqueos[0].clienteId) : null;
       return {
         estado: "bloqueada",
         bloqueadaPor: {
-          cancha: `${otra.nombre} ${otra.deporte}`,
-          cliente: cliente(bloqueo.clienteId)?.nombre || "un turno",
-          hora: bloqueo.hora,
+          cancha: nombres.join(" y "),
+          cliente: persona?.nombre || "",
+          hora,
         },
       };
     }
@@ -170,7 +243,8 @@ function crearStore(archivo) {
       ...turno,
       cliente: persona?.nombre || "",
       telefono: persona?.telefono || "",
-      cancha: lugar ? `${lugar.nombre} ${lugar.deporte}` : "",
+      cancha: lugar?.nombre || "",
+      deporte: lugar?.deporte || "",
     };
   }
 
@@ -209,30 +283,53 @@ function crearStore(archivo) {
     };
   }
 
-  function asegurarCliente(nombre, telefono) {
-    const limpio = nombre.trim();
-    const tel = (telefono || "").trim();
-    const existente = leer().clientes.find(
-      (item) => item.nombre.toLowerCase() === limpio.toLowerCase() && item.telefono === tel
-    );
-    if (existente) return existente;
-    const nuevo = { id: id(), nombre: limpio, telefono: tel };
+  function pareceTelefono(texto) {
+    return /^[\d\s()+-]{6,}$/.test(texto);
+  }
+
+  function resolverCliente(pedido) {
+    if (pedido.clienteId) {
+      const elegido = cliente(pedido.clienteId);
+      if (elegido) return elegido;
+    }
+    const texto = (pedido.cliente || "").trim();
+    if (!texto) return null;
+    const tel = (pedido.telefono || "").trim();
+    const compacto = texto.replace(/\s/g, "");
+    const exacto = leer().clientes.find((item) => {
+      if (item.nombre.toLowerCase() === texto.toLowerCase()) return true;
+      const telItem = (item.telefono || "").replace(/\s/g, "");
+      if (tel && telItem === tel.replace(/\s/g, "")) return true;
+      return telItem && telItem === compacto;
+    });
+    if (exacto) return exacto;
+    const nuevo = pareceTelefono(texto)
+      ? { id: id(), nombre: texto, telefono: texto }
+      : { id: id(), nombre: texto, telefono: tel };
     leer().clientes.push(nuevo);
     return nuevo;
   }
 
+  function fechaPedido(pedido) {
+    return pedido?.fecha && /^\d{4}-\d{2}-\d{2}$/.test(pedido.fecha) ? pedido.fecha : hoyISO();
+  }
+
   function snapshot(fecha = hoyISO()) {
     const base = leer();
+    const dia = fecha || hoyISO();
     return {
       hoy: hoyISO(),
-      fecha,
+      fecha: dia,
       horas: HORAS,
       canchas: base.canchas.map((item) => ({
         ...item,
-        celdas: HORAS.map((hora) => ({ hora, ...celda(item.id, fecha, hora) })),
+        celdas: HORAS.map((hora) => ({ hora, ...celda(item.id, dia, hora) })),
       })),
-      alumnos: base.alumnos.map((item) => estadoAlumno(item, fecha)),
-      resumen: resumen(fecha),
+      accesorios: base.accesorios,
+      comisionDirectiva: Number(base.comisionDirectiva) || 0,
+      clientes: [...base.clientes].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+      alumnos: base.alumnos.map((item) => estadoAlumno(item, dia)),
+      resumen: resumen(dia),
     };
   }
 
@@ -275,31 +372,36 @@ function crearStore(archivo) {
     if (!pedido.fecha || !/^\d{4}-\d{2}-\d{2}$/.test(pedido.fecha)) {
       return { ok: false, error: "La fecha no es válida." };
     }
-    const nombre = (pedido.cliente || "").trim();
-    if (!nombre) return { ok: false, error: "Falta el nombre del cliente." };
     const ocupada = celda(pedido.canchaId, pedido.fecha, pedido.hora);
     if (ocupada.estado === "alquilada") return { ok: false, error: "Ese turno ya está alquilado." };
     if (ocupada.estado === "bloqueada") {
-      return {
-        ok: false,
-        error: `Esa hora está bloqueada por ${ocupada.bloqueadaPor.cancha}.`,
-      };
+      return { ok: false, error: `Esa hora está bloqueada por ${ocupada.bloqueadaPor.cancha}.` };
     }
-    const metodos = ["efectivo", "transferencia", "tarjeta"];
-    if (!metodos.includes(pedido.metodo)) return { ok: false, error: "Elegí efectivo, transferencia o tarjeta." };
-    const monto = Number(pedido.monto);
-    if (!Number.isFinite(monto) || monto <= 0) return { ok: false, error: "El monto tiene que ser mayor a cero." };
-    const persona = asegurarCliente(nombre, pedido.telefono);
+    if (!METODOS.includes(pedido.metodo)) return { ok: false, error: "Elegí efectivo, transferencia o tarjeta." };
+    const persona = resolverCliente(pedido);
+    if (!persona) return { ok: false, error: "Falta el nombre del cliente." };
+    const pedidosIds = [...new Set(Array.isArray(pedido.accesorios) ? pedido.accesorios : [])];
+    const detalle = [];
+    for (const accesorioId of pedidosIds) {
+      const item = leer().accesorios.find((accesorio) => accesorio.id === accesorioId);
+      if (!item) return { ok: false, error: "Ese accesorio no existe." };
+      detalle.push({ id: item.id, nombre: item.nombre, precio: item.precio });
+    }
+    const extra = detalle.reduce((suma, item) => suma + item.precio, 0);
+    const comision = Math.round(lugar.precio * (Number(leer().comisionDirectiva) || 0) / 100);
+    const monto = lugar.precio + extra;
+    if (monto <= 0) return { ok: false, error: "El monto tiene que ser mayor a cero." };
     leer().turnos.push({
       id: id(),
       canchaId: lugar.id,
       fecha: pedido.fecha,
       hora: pedido.hora,
       clienteId: persona.id,
-      pelota: Boolean(pedido.pelota),
+      accesorios: detalle,
       metodo: pedido.metodo,
       monto,
-      pagado: !pedido.fiado,
+      comision,
+      pagado: !pedido.fiado && pedido.pagado !== false,
     });
     guardar();
     return { ok: true, estado: snapshot(pedido.fecha) };
@@ -378,7 +480,100 @@ function crearStore(archivo) {
     return { ok: true, estado: snapshot(fecha) };
   }
 
-  return { snapshot, alquilar, cancelar, cobrarTurno, cobrarCuota, agregarAlumno, archivo };
+  function resolverRelaciones(propioId, dentroDe, compartirCon) {
+    let espacioId = null;
+    let espacioNuevoEn = null;
+    if (dentroDe) {
+      if (dentroDe === propioId) return { ok: false, error: "Una cancha no puede estar dentro de sí misma." };
+      const grande = cancha(dentroDe);
+      if (!grande) return { ok: false, error: "La cancha grande no existe." };
+      if (grande.dentroDe) return { ok: false, error: "Elegí una cancha que no esté dentro de otra." };
+      if (propioId && leer().canchas.some((item) => item.dentroDe === propioId)) {
+        return { ok: false, error: "Esta cancha contiene otras, no puede ir adentro." };
+      }
+    }
+    if (compartirCon) {
+      if (compartirCon === propioId) return { ok: false, error: "Elegí otra cancha para compartir el espacio." };
+      const otra = cancha(compartirCon);
+      if (!otra) return { ok: false, error: "La cancha para compartir no existe." };
+      if (otra.espacioId) espacioId = otra.espacioId;
+      else {
+        espacioId = id();
+        espacioNuevoEn = otra.id;
+      }
+    }
+    return { ok: true, dentroDe: dentroDe || null, espacioId, espacioNuevoEn };
+  }
+
+  function guardarCancha(pedido) {
+    const nombre = (pedido.nombre || "").trim();
+    const deporte = (pedido.deporte || "").trim();
+    const precio = Number(pedido.precio);
+    if (!nombre) return { ok: false, error: "Falta el nombre de la cancha." };
+    if (!deporte) return { ok: false, error: "Falta el deporte." };
+    if (!Number.isFinite(precio) || precio <= 0) return { ok: false, error: "El precio tiene que ser mayor a cero." };
+    const base = leer();
+    const existente = pedido.id ? base.canchas.find((item) => item.id === pedido.id) : null;
+    if (pedido.id && !existente) return { ok: false, error: "Esa cancha no existe." };
+    const relaciones = resolverRelaciones(existente?.id || null, pedido.dentroDe || "", pedido.compartirCon || "");
+    if (!relaciones.ok) return relaciones;
+    const actual = existente || { id: id() };
+    actual.nombre = nombre;
+    actual.deporte = deporte;
+    actual.precio = precio;
+    if (relaciones.dentroDe) actual.dentroDe = relaciones.dentroDe;
+    else delete actual.dentroDe;
+    if (relaciones.espacioId) actual.espacioId = relaciones.espacioId;
+    else delete actual.espacioId;
+    if (relaciones.espacioNuevoEn) {
+      const otra = cancha(relaciones.espacioNuevoEn);
+      if (otra) otra.espacioId = relaciones.espacioId;
+    }
+    if (!existente) base.canchas.push(actual);
+    guardar();
+    return { ok: true, estado: snapshot(fechaPedido(pedido)) };
+  }
+
+  function guardarAccesorio(pedido) {
+    const nombre = (pedido.nombre || "").trim();
+    const precio = Number(pedido.precio);
+    if (!nombre) return { ok: false, error: "Falta el nombre del accesorio." };
+    if (!Number.isFinite(precio) || precio <= 0) return { ok: false, error: "El precio tiene que ser mayor a cero." };
+    const base = leer();
+    if (pedido.id) {
+      const actual = base.accesorios.find((item) => item.id === pedido.id);
+      if (!actual) return { ok: false, error: "Ese accesorio no existe." };
+      actual.nombre = nombre;
+      actual.precio = precio;
+    } else {
+      base.accesorios.push({ id: id(), nombre, precio });
+    }
+    guardar();
+    return { ok: true, estado: snapshot(fechaPedido(pedido)) };
+  }
+
+  function guardarComision(pedido) {
+    const valor = Number(pedido?.porcentaje ?? pedido);
+    if (!Number.isFinite(valor) || valor < 0 || valor > 100) {
+      return { ok: false, error: "La comisión tiene que estar entre 0 y 100." };
+    }
+    leer().comisionDirectiva = valor;
+    guardar();
+    return { ok: true, estado: snapshot(fechaPedido(pedido)) };
+  }
+
+  return {
+    snapshot,
+    alquilar,
+    cancelar,
+    cobrarTurno,
+    cobrarCuota,
+    agregarAlumno,
+    guardarCancha,
+    guardarAccesorio,
+    guardarComision,
+    archivo,
+  };
 }
 
 module.exports = { crearStore, hoyISO, HORAS };

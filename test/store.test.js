@@ -10,66 +10,229 @@ function nuevo() {
   return { store: crearStore(archivo), archivo };
 }
 
-test("el fútbol 5 alquilado bloquea el fútbol 8 de la misma cancha", () => {
+function celda(estado, canchaId, hora) {
+  const cancha = estado.canchas.find((item) => item.id === canchaId);
+  return cancha.celdas.find((item) => item.hora === hora);
+}
+
+test("una cancha chica bloquea a la grande y no a la otra chica", () => {
   const { store, archivo } = nuevo();
-  const hoy = hoyISO();
-  const estado = store.snapshot(hoy);
-  const futbol8 = estado.canchas.find((cancha) => cancha.id === "f8-norte");
-  const dieciocho = futbol8.celdas.find((celda) => celda.hora === "18:00");
-  assert.equal(dieciocho.estado, "bloqueada");
-  assert.match(dieciocho.bloqueadaPor.cancha, /Fútbol 5/);
-  const intento = store.alquilar({
-    canchaId: "f8-norte",
-    fecha: hoy,
-    hora: "18:00",
-    cliente: "Club rival",
-    metodo: "efectivo",
-    monto: 28000,
-  });
-  assert.equal(intento.ok, false);
-  fs.unlinkSync(archivo);
+  try {
+    const hoy = hoyISO();
+    const estado = store.snapshot(hoy);
+    assert.equal(estado.horas[0], "10:00");
+    assert.equal(estado.horas.at(-1), "22:00");
+    assert.equal(estado.horas.includes("08:00"), false);
+    assert.equal(estado.horas.includes("23:00"), false);
+    assert.equal(celda(estado, "futbol-5-a", "18:00").estado, "alquilada");
+    assert.equal(celda(estado, "futbol-8", "18:00").estado, "bloqueada");
+    assert.match(celda(estado, "futbol-8", "18:00").bloqueadaPor.cancha, /Fútbol 5 A/);
+    assert.equal(celda(estado, "futbol-5-b", "18:00").estado, "libre");
+    assert.equal(celda(estado, "voleibol", "18:00").estado, "libre");
+    const intento = store.alquilar({
+      canchaId: "futbol-8",
+      fecha: hoy,
+      hora: "18:00",
+      cliente: "Club rival",
+      metodo: "efectivo",
+    });
+    assert.equal(intento.ok, false);
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
 });
 
-test("cancelar el turno libera la cancha superpuesta", () => {
+test("la cancha grande bloquea a todas las de adentro", () => {
   const { store, archivo } = nuevo();
-  const hoy = hoyISO();
-  const cancelado = store.cancelar("t1");
-  assert.equal(cancelado.ok, true);
-  const futbol8 = cancelado.estado.canchas.find((cancha) => cancha.id === "f8-norte");
-  assert.equal(futbol8.celdas.find((celda) => celda.hora === "18:00").estado, "libre");
-  fs.unlinkSync(archivo);
+  try {
+    const hoy = hoyISO();
+    const alquiler = store.alquilar({
+      canchaId: "futbol-8",
+      fecha: hoy,
+      hora: "15:00",
+      cliente: "Torneo interno",
+      metodo: "transferencia",
+    });
+    assert.equal(alquiler.ok, true);
+    for (const id of ["futbol-5-a", "futbol-5-b"]) {
+      assert.equal(celda(alquiler.estado, id, "15:00").estado, "bloqueada");
+    }
+    assert.equal(celda(alquiler.estado, "voleibol", "15:00").estado, "libre");
+    const intento = store.alquilar({
+      canchaId: "futbol-5-b",
+      fecha: hoy,
+      hora: "15:00",
+      cliente: "Otro equipo",
+      metodo: "efectivo",
+    });
+    assert.equal(intento.ok, false);
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
 });
 
-test("un turno fiado entra en las deudas y se puede cobrar", () => {
+test("el vóley alquilado bloquea el hándbol del mismo espacio", () => {
   const { store, archivo } = nuevo();
-  const hoy = hoyISO();
-  const antes = store.snapshot(hoy).resumen;
-  assert.ok(antes.deudasTurnos.some((turno) => turno.cliente === "Diego Sosa"));
-  const cobrado = store.cobrarTurno("t3");
-  assert.equal(cobrado.ok, true);
-  assert.equal(cobrado.estado.resumen.deudasTurnos.some((turno) => turno.id === "t3"), false);
-  fs.unlinkSync(archivo);
+  try {
+    const hoy = hoyISO();
+    const alquiler = store.alquilar({
+      canchaId: "voleibol",
+      fecha: hoy,
+      hora: "19:00",
+      cliente: "Escuela voley",
+      metodo: "efectivo",
+    });
+    assert.equal(alquiler.ok, true);
+    assert.equal(celda(alquiler.estado, "handbol", "19:00").estado, "bloqueada");
+    assert.equal(celda(alquiler.estado, "futbol-5-b", "19:00").estado, "libre");
+    const inverso = store.alquilar({
+      canchaId: "handbol",
+      fecha: hoy,
+      hora: "20:00",
+      cliente: "Escuela handbol",
+      metodo: "tarjeta",
+    });
+    assert.equal(inverso.ok, true);
+    assert.equal(celda(inverso.estado, "voleibol", "20:00").estado, "bloqueada");
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("la comisión directiva no suma los accesorios", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const hoy = hoyISO();
+    const estado = store.snapshot(hoy);
+    const pelotaFutbol = estado.accesorios.find((item) => item.nombre === "Pelota de fútbol");
+    const pelotaVoley = estado.accesorios.find((item) => item.nombre === "Pelota de vóley");
+    const alquiler = store.alquilar({
+      canchaId: "futbol-5-b",
+      fecha: hoy,
+      hora: "16:00",
+      cliente: "Laura Méndez",
+      metodo: "tarjeta",
+      accesorios: [pelotaFutbol.id, pelotaVoley.id],
+    });
+    assert.equal(alquiler.ok, true);
+    const turno = alquiler.estado.resumen.turnos.find((item) => item.cliente === "Laura Méndez");
+    assert.equal(turno.monto, 14000 + 1500 + 1500);
+    assert.equal(turno.comision, 1400);
+    assert.notEqual(turno.comision, Math.round(turno.monto * 10 / 100));
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("una cancha chica nueva dentro de la grande también bloquea", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const hoy = hoyISO();
+    const alta = store.guardarCancha({
+      nombre: "Fútbol 5 C",
+      deporte: "Fútbol",
+      precio: 14000,
+      dentroDe: "futbol-8",
+      fecha: hoy,
+    });
+    assert.equal(alta.ok, true);
+    const nueva = alta.estado.canchas.find((cancha) => cancha.nombre === "Fútbol 5 C");
+    assert.equal(nueva.dentroDe, "futbol-8");
+    const alquiler = store.alquilar({
+      canchaId: nueva.id,
+      fecha: hoy,
+      hora: "12:00",
+      cliente: "Equipo nuevo",
+      metodo: "efectivo",
+    });
+    assert.equal(alquiler.ok, true);
+    assert.equal(celda(alquiler.estado, "futbol-8", "12:00").estado, "bloqueada");
+    assert.equal(celda(alquiler.estado, "futbol-5-a", "12:00").estado, "libre");
+    assert.equal(celda(alquiler.estado, "futbol-5-b", "12:00").estado, "libre");
+    const grande = store.alquilar({
+      canchaId: "futbol-8",
+      fecha: hoy,
+      hora: "13:00",
+      cliente: "Liga",
+      metodo: "efectivo",
+    });
+    assert.equal(grande.ok, true);
+    const chica = grande.estado.canchas.find((cancha) => cancha.nombre === "Fútbol 5 C");
+    assert.equal(chica.celdas.find((item) => item.hora === "13:00").estado, "bloqueada");
+    assert.equal(celda(grande.estado, "futbol-5-a", "13:00").estado, "bloqueada");
+    assert.equal(celda(grande.estado, "futbol-5-b", "13:00").estado, "bloqueada");
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("alquilar un deporte bloquea al otro y también a la cancha que lo contiene", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const hoy = hoyISO();
+    const editada = store.guardarCancha({
+      id: "voleibol",
+      nombre: "Vóleibol",
+      deporte: "Vóleibol",
+      precio: 15000,
+      dentroDe: "futbol-8",
+      compartirCon: "handbol",
+      fecha: hoy,
+    });
+    assert.equal(editada.ok, true);
+    const alquiler = store.alquilar({
+      canchaId: "handbol",
+      fecha: hoy,
+      hora: "14:00",
+      cliente: "Handbol local",
+      metodo: "efectivo",
+    });
+    assert.equal(alquiler.ok, true);
+    assert.equal(celda(alquiler.estado, "voleibol", "14:00").estado, "bloqueada");
+    assert.equal(celda(alquiler.estado, "futbol-8", "14:00").estado, "bloqueada");
+    assert.equal(celda(alquiler.estado, "futbol-5-a", "14:00").estado, "libre");
+    const grande = store.alquilar({
+      canchaId: "futbol-8",
+      fecha: hoy,
+      hora: "16:00",
+      cliente: "Fútbol completo",
+      metodo: "transferencia",
+    });
+    assert.equal(grande.ok, true);
+    assert.equal(celda(grande.estado, "voleibol", "16:00").estado, "bloqueada");
+    assert.equal(celda(grande.estado, "handbol", "16:00").estado, "bloqueada");
+    assert.equal(celda(grande.estado, "futbol-5-b", "16:00").estado, "bloqueada");
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("cancelar el turno de la chica libera a la grande", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const cancelado = store.cancelar("t1");
+    assert.equal(cancelado.ok, true);
+    assert.equal(celda(cancelado.estado, "futbol-8", "18:00").estado, "libre");
+    assert.equal(celda(cancelado.estado, "futbol-5-a", "18:00").estado, "libre");
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
 });
 
 test("cobrar la cuota del mes suma el monto y la comisión del profesor", () => {
   const { store, archivo } = nuevo();
-  const hoy = hoyISO();
-  const antes = store.snapshot(hoy);
-  const luca = antes.alumnos.find((alumno) => alumno.nombre === "Luca Gómez");
-  assert.notEqual(luca.situacion, "Al día");
-  const cobro = store.cobrarCuota(luca.id, hoy);
-  assert.equal(cobro.ok, true);
-  const cuota = cobro.estado.resumen.cuotasDetalle.find((item) => item.alumno === "Luca Gómez");
-  assert.equal(cuota.monto, 25000);
-  assert.equal(cuota.comision, 5000);
-  assert.equal(cobro.estado.alumnos.find((alumno) => alumno.id === luca.id).situacion, "Al día");
-  fs.unlinkSync(archivo);
-});
-
-test("vóley alquilado bloquea hándbol en la misma cancha", () => {
-  const { store, archivo } = nuevo();
-  const hoy = hoyISO();
-  const hand = store.snapshot(hoy).canchas.find((cancha) => cancha.id === "hand-sur");
-  assert.equal(hand.celdas.find((celda) => celda.hora === "19:00").estado, "bloqueada");
-  fs.unlinkSync(archivo);
+  try {
+    const hoy = hoyISO();
+    const antes = store.snapshot(hoy);
+    const luca = antes.alumnos.find((alumno) => alumno.nombre === "Luca Gómez");
+    assert.notEqual(luca.situacion, "Al día");
+    const cobro = store.cobrarCuota(luca.id, hoy);
+    assert.equal(cobro.ok, true);
+    const cuota = cobro.estado.resumen.cuotasDetalle.find((item) => item.alumno === "Luca Gómez");
+    assert.equal(cuota.monto, 25000);
+    assert.equal(cuota.comision, 5000);
+    assert.equal(cobro.estado.alumnos.find((alumno) => alumno.id === luca.id).situacion, "Al día");
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
 });

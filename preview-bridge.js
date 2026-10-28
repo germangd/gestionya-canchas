@@ -14,4 +14,7 @@ window.canchas = {
   cobrarTurno: (turnoId) => enviar("/api/cobrar-turno", { turnoId }),
   cobrarCuota: (alumnoId, fecha) => enviar("/api/cobrar-cuota", { alumnoId, fecha }),
   agregarAlumno: (alumno, fecha) => enviar("/api/agregar-alumno", { alumno, fecha }),
+  guardarCancha: (pedido) => enviar("/api/guardar-cancha", pedido),
+  guardarAccesorio: (pedido) => enviar("/api/guardar-accesorio", pedido),
+  guardarComision: (pedido) => enviar("/api/guardar-comision", pedido),
 };
