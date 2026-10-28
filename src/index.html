@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GestiónYa Canchas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">
+        <span class="brand-mark">GY</span>
+        <div>
+          <strong>GestiónYa</strong>
+          <em>Canchas</em>
+        </div>
+      </div>
+      <nav>
+        <button type="button" data-vista="mapa" class="activo">Mapa del día</button>
+        <button type="button" data-vista="escuelita">Escuelita</button>
+        <button type="button" data-vista="resumen">Resumen</button>
+      </nav>
+      <p class="nota">Los datos quedan en esta PC. Se puede usar sin internet.</p>
+    </aside>
+    <main>
+      <header class="barra">
+        <div class="fecha-nav">
+          <button type="button" id="anterior" aria-label="Día anterior">←</button>
+          <h1 id="titulo-fecha"></h1>
+          <button type="button" id="siguiente" aria-label="Día siguiente">→</button>
+        </div>
+        <button type="button" id="hoy" class="hoy">Hoy</button>
+        <div class="leyenda">
+          <span><i class="libre"></i> Libre</span>
+          <span><i class="alquilada"></i> Alquilada</span>
+          <span><i class="bloqueada"></i> Bloqueada</span>
+        </div>
+      </header>
+      <section id="vista"></section>
+    </main>
+  </div>
+  <dialog id="panel">
+    <form id="formulario" method="dialog"></form>
+  </dialog>
+  <script src="renderer.js"></script>
+</body>
+</html>

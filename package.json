@@ -1,0 +1,15 @@
+{
+  "name": "gestionya-canchas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Alquiler de canchas para la secretaría del club. Funciona sin internet y guarda los datos en la PC.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/store.test.js",
+    "preview": "node preview-server.js"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0"
+  }
+}
