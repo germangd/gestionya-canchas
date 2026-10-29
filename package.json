@@ -30,7 +30,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "assets/logo.png",
+      "icon": "assets/icono-canchas.png",
       "target": [
         {
           "target": "nsis",

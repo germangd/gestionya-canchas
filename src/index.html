@@ -44,6 +44,23 @@
       </div>
     </div>
   </div>
+  <div id="modal-cliente" class="modal" hidden>
+    <form class="modal-contenido" id="form-cliente-popup">
+      <h2 id="modal-cliente-titulo">Cliente nuevo</h2>
+      <p class="ayuda" id="modal-cliente-ayuda">Ese teléfono no está cargado. Completá el nombre para darlo de alta.</p>
+      <label for="modal-cliente-telefono">Teléfono
+        <input type="tel" id="modal-cliente-telefono" autocomplete="tel">
+      </label>
+      <label for="modal-cliente-nombre">Nombre
+        <input type="text" id="modal-cliente-nombre" autocomplete="name">
+      </label>
+      <p id="modal-cliente-error" class="deuda"></p>
+      <div class="modal-acciones">
+        <button type="submit" class="primario">Guardar cliente</button>
+        <button type="button" id="btn-cerrar-cliente">Cancelar</button>
+      </div>
+    </form>
+  </div>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -17,6 +17,8 @@ window.canchas = {
   guardarCancha: (pedido) => enviar("/api/guardar-cancha", pedido),
   guardarAccesorio: (pedido) => enviar("/api/guardar-accesorio", pedido),
   guardarComision: (pedido) => enviar("/api/guardar-comision", pedido),
+  guardarCliente: (pedido) => enviar("/api/guardar-cliente", pedido),
+  eliminarCliente: (clienteId) => enviar("/api/eliminar-cliente", { clienteId }),
   licencia: {
     getStatus: async () => ({ status: "ok", valid: true, mode: "development", reason: null, signatureVerified: true }),
     getEdition: async () => ({ status: "ok", isDemo: false, daysLeft: null }),

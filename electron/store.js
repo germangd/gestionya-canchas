@@ -47,6 +47,26 @@ function cuotasPagadas(alumnoId, desde, hasta, cuota, comision) {
   return lista;
 }
 
+function semillaVacia() {
+  return {
+    canchas: [],
+    accesorios: [],
+    comisionDirectiva: 10,
+    clientes: [],
+    turnos: [],
+    alumnos: [],
+    cuotas: [],
+  };
+}
+
+function esMuestraDeFabrica(base) {
+  const ids = (lista) => (lista || []).map((item) => item.id).sort().join(",");
+  return ids(base.clientes) === "c1,c2,c3"
+    && ids(base.alumnos) === "a1,a2,a3"
+    && ids(base.canchas) === "futbol-5-a,futbol-5-b,futbol-5-c,futbol-8,handbol,voleibol"
+    && (base.turnos || []).length === 0;
+}
+
 function semilla(hoy) {
   const anio = hoy.slice(0, 4);
   const mes = hoy.slice(0, 7);
@@ -123,14 +143,17 @@ function normalizar(base) {
   return base;
 }
 
-function crearStore(archivo) {
+function crearStore(archivo, opciones = {}) {
   let datos = null;
 
   function leer() {
     if (datos) return datos;
     if (fs.existsSync(archivo)) {
       datos = normalizar(JSON.parse(fs.readFileSync(archivo, "utf8")));
-      if (datos.canchas.some((cancha) => cancha.id === "f5-norte" || cancha.id === "f8-norte")) {
+      if (opciones.vacio && esMuestraDeFabrica(datos)) {
+        datos = semillaVacia();
+        guardar();
+      } else if (datos.canchas.some((cancha) => cancha.id === "f5-norte" || cancha.id === "f8-norte")) {
         const nueva = semilla(hoyISO());
         datos.canchas = nueva.canchas;
         datos.accesorios = nueva.accesorios;
@@ -139,7 +162,7 @@ function crearStore(archivo) {
       }
       return datos;
     }
-    datos = semilla(hoyISO());
+    datos = opciones.vacio ? semillaVacia() : semilla(hoyISO());
     guardar();
     return datos;
   }
@@ -231,13 +254,27 @@ function crearStore(archivo) {
     return { estado: "libre" };
   }
 
+  function cuentasTurno(turno) {
+    const monto = Number(turno.monto) || 0;
+    const declarado = Number(turno.abonado);
+    const abonado = Number.isFinite(declarado)
+      ? Math.min(monto, Math.max(0, declarado))
+      : turno.pagado === false ? 0 : monto;
+    return {
+      abonado,
+      saldo: monto - abonado,
+      pagado: monto > 0 && abonado >= monto,
+    };
+  }
+
   function enriquecerTurno(turno) {
     const persona = cliente(turno.clienteId);
     const lugar = cancha(turno.canchaId);
     return {
       ...turno,
-      cliente: persona?.nombre || "",
-      telefono: persona?.telefono || "",
+      ...cuentasTurno(turno),
+      cliente: persona?.nombre || turno.clienteNombre || "",
+      telefono: persona?.telefono || turno.clienteTelefono || "",
       cancha: lugar?.nombre || "",
       deporte: lugar?.deporte || "",
     };
@@ -278,6 +315,21 @@ function crearStore(archivo) {
     };
   }
 
+  function formatearNombre(valor) {
+    let salida = "";
+    let nueva = true;
+    for (const char of String(valor || "").trim().replace(/\s+/g, " ")) {
+      if (char === " " || char === "-" || char === "'") {
+        salida += char;
+        nueva = true;
+        continue;
+      }
+      salida += nueva ? char.toLocaleUpperCase("es-AR") : char.toLocaleLowerCase("es-AR");
+      nueva = false;
+    }
+    return salida;
+  }
+
   function pareceTelefono(texto) {
     return /^[\d\s()+-]{6,}$/.test(texto);
   }
@@ -300,7 +352,7 @@ function crearStore(archivo) {
     if (exacto) return exacto;
     const nuevo = pareceTelefono(texto)
       ? { id: id(), nombre: texto, telefono: texto }
-      : { id: id(), nombre: texto, telefono: tel };
+      : { id: id(), nombre: formatearNombre(texto), telefono: tel };
     leer().clientes.push(nuevo);
     return nuevo;
   }
@@ -339,8 +391,9 @@ function crearStore(archivo) {
         alumno: base.alumnos.find((alumno) => alumno.id === item.alumnoId)?.nombre || "",
       }));
     const deudasTurnos = base.turnos
-      .filter((item) => item.fecha <= fecha && !item.pagado)
-      .map(enriquecerTurno);
+      .filter((item) => item.fecha <= fecha)
+      .map(enriquecerTurno)
+      .filter((item) => item.saldo > 0);
     const deudasCuotas = base.alumnos.flatMap((alumno) =>
       mesesAdeudados(alumno, fecha).map((mes) => ({
         alumno: alumno.nombre,
@@ -350,9 +403,9 @@ function crearStore(archivo) {
     );
     const total = (lista, campo = "monto") => lista.reduce((acum, item) => acum + item[campo], 0);
     return {
-      alquileres: total(turnosDia.filter((item) => item.pagado)),
+      alquileres: turnosDia.reduce((suma, turno) => suma + turno.abonado, 0),
       cuotas: total(cuotasDia),
-      deudas: total(deudasTurnos) + total(deudasCuotas),
+      deudas: deudasTurnos.reduce((suma, turno) => suma + turno.saldo, 0) + total(deudasCuotas),
       comisiones: total(cuotasDia, "comision"),
       turnos: turnosDia,
       cuotasDetalle: cuotasDia,
@@ -368,6 +421,7 @@ function crearStore(archivo) {
     if (!pedido.fecha || !/^\d{4}-\d{2}-\d{2}$/.test(pedido.fecha)) {
       return { ok: false, error: "La fecha no es válida." };
     }
+    if (pedido.fecha < hoyISO()) return { ok: false, error: "La fecha no puede ser anterior a hoy." };
     const ocupada = celda(pedido.canchaId, pedido.fecha, pedido.hora);
     if (ocupada.estado === "alquilada") return { ok: false, error: "Ese turno ya está alquilado." };
     if (ocupada.estado === "bloqueada") {
@@ -387,6 +441,17 @@ function crearStore(archivo) {
     const comision = Math.round(lugar.precio * (Number(leer().comisionDirectiva) || 0) / 100);
     const monto = lugar.precio + extra;
     if (monto <= 0) return { ok: false, error: "El monto tiene que ser mayor a cero." };
+    const conSena = pedido.sena === true;
+    let abonado = monto;
+    if (conSena) {
+      abonado = Math.round(Number(pedido.abonado));
+      if (!Number.isFinite(abonado) || abonado <= 0) {
+        return { ok: false, error: "La seña tiene que ser mayor a cero." };
+      }
+      if (abonado >= monto) {
+        return { ok: false, error: "La seña tiene que ser menor que el total." };
+      }
+    }
     leer().turnos.push({
       id: id(),
       canchaId: lugar.id,
@@ -396,8 +461,9 @@ function crearStore(archivo) {
       accesorios: detalle,
       metodo: pedido.metodo,
       monto,
+      abonado,
       comision,
-      pagado: !pedido.fiado && pedido.pagado !== false,
+      pagado: abonado >= monto,
     });
     guardar();
     return { ok: true, estado: snapshot(pedido.fecha) };
@@ -415,6 +481,9 @@ function crearStore(archivo) {
   function cobrarTurno(turnoId) {
     const turno = leer().turnos.find((item) => item.id === turnoId);
     if (!turno) return { ok: false, error: "Ese turno no está." };
+    const cuentas = cuentasTurno(turno);
+    if (cuentas.saldo <= 0) return { ok: false, error: "Ese turno ya está pago." };
+    turno.abonado = turno.monto;
     turno.pagado = true;
     guardar();
     return { ok: true, estado: snapshot(turno.fecha) };
@@ -548,6 +617,53 @@ function crearStore(archivo) {
     return { ok: true, estado: snapshot(fechaPedido(pedido)) };
   }
 
+  function guardarCliente(pedido) {
+    const nombre = formatearNombre(pedido.nombre);
+    const telefono = (pedido.telefono || "").trim();
+    if (!nombre) return { ok: false, error: "Falta el nombre del cliente." };
+    const base = leer();
+    const digitos = telefono.replace(/\D/g, "");
+    if (digitos) {
+      const mismoTelefono = base.clientes.find((item) => {
+        if (pedido.id && item.id === pedido.id) return false;
+        return (item.telefono || "").replace(/\D/g, "") === digitos;
+      });
+      if (mismoTelefono) return { ok: false, error: "Ese teléfono ya está cargado." };
+    }
+    const repetido = base.clientes.find((item) => {
+      if (pedido.id && item.id === pedido.id) return false;
+      const mismoNombre = item.nombre.toLowerCase() === nombre.toLowerCase();
+      const mismoTelefono = (item.telefono || "").replace(/\s/g, "") === telefono.replace(/\s/g, "");
+      return mismoNombre && (mismoTelefono || !telefono || !item.telefono);
+    });
+    if (repetido) return { ok: false, error: "Ese cliente ya está cargado." };
+    if (pedido.id) {
+      const actual = base.clientes.find((item) => item.id === pedido.id);
+      if (!actual) return { ok: false, error: "Ese cliente no existe." };
+      actual.nombre = nombre;
+      actual.telefono = telefono;
+    } else {
+      base.clientes.push({ id: id(), nombre, telefono });
+    }
+    guardar();
+    return { ok: true, estado: snapshot(fechaPedido(pedido)) };
+  }
+
+  function eliminarCliente(clienteId) {
+    const base = leer();
+    const actual = base.clientes.find((item) => item.id === clienteId);
+    if (!actual) return { ok: false, error: "Ese cliente no existe." };
+    for (const turno of base.turnos) {
+      if (turno.clienteId !== actual.id) continue;
+      turno.clienteNombre = actual.nombre;
+      turno.clienteTelefono = actual.telefono || "";
+      delete turno.clienteId;
+    }
+    base.clientes = base.clientes.filter((item) => item.id !== actual.id);
+    guardar();
+    return { ok: true, estado: snapshot() };
+  }
+
   function guardarComision(pedido) {
     const valor = Number(pedido?.porcentaje ?? pedido);
     if (!Number.isFinite(valor) || valor < 0 || valor > 100) {
@@ -568,6 +684,8 @@ function crearStore(archivo) {
     guardarCancha,
     guardarAccesorio,
     guardarComision,
+    guardarCliente,
+    eliminarCliente,
     archivo,
   };
 }

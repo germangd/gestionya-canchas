@@ -95,6 +95,7 @@ function crearVentana() {
     minWidth: 1024,
     minHeight: 680,
     backgroundColor: "#f4f6f1",
+    icon: path.join(__dirname, "..", "assets", "icono-canchas.png"),
     title: edition.isDemo ? "GestiónYa Canchas Demo" : "GestiónYa Canchas",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -118,7 +119,9 @@ app.whenReady().then(() => {
     return;
   }
 
-  const store = crearStore(path.join(app.getPath("userData"), "datos.json"));
+  const store = crearStore(path.join(app.getPath("userData"), "datos.json"), {
+    vacio: app.isPackaged,
+  });
   ipcMain.handle("estado", (_evento, fecha) => store.snapshot(fecha || undefined));
   ipcMain.handle("alquilar", conEscritura((_evento, pedido) => store.alquilar(pedido)));
   ipcMain.handle("cancelar", conEscritura((_evento, turnoId) => store.cancelar(turnoId)));
@@ -128,6 +131,8 @@ app.whenReady().then(() => {
   ipcMain.handle("guardar-cancha", conEscritura((_evento, pedido) => store.guardarCancha(pedido)));
   ipcMain.handle("guardar-accesorio", conEscritura((_evento, pedido) => store.guardarAccesorio(pedido)));
   ipcMain.handle("guardar-comision", conEscritura((_evento, pedido) => store.guardarComision(pedido)));
+  ipcMain.handle("guardar-cliente", conEscritura((_evento, pedido) => store.guardarCliente(pedido)));
+  ipcMain.handle("eliminar-cliente", conEscritura((_evento, clienteId) => store.eliminarCliente(clienteId)));
 
   ipcMain.handle("app:getEditionStatus", async () => {
     try {

@@ -9,6 +9,13 @@ let seccion = "canchas";
 let seleccionId = null;
 let canchaEditId = null;
 let accesorioEditId = null;
+let clienteEditId = null;
+let alquilerTelefono = "";
+let alquilerAccesorios = [];
+let alquilerMetodo = "efectivo";
+let alquilerCobro = "total";
+let alquilerSena = "";
+let alquilerBuscado = false;
 let aviso = "";
 let licencia = { mode: "development", reason: null, valid: true, signatureVerified: true };
 let edicion = { isDemo: false, daysLeft: null };
@@ -74,7 +81,9 @@ function comisionDe(precio) {
   return Math.round(precio * (Number(snapshot.comisionDirectiva) || 0) / 100);
 }
 
-function barraFecha() {
+function barraFecha(opciones = {}) {
+  const desdeHoy = Boolean(opciones.desdeHoy);
+  const hoy = snapshot?.hoy || "";
   const barra = el("div", "fecha");
   barra.append(el("small", "", "Fecha"));
   const input = document.createElement("input");
@@ -82,8 +91,13 @@ function barraFecha() {
   input.className = "fecha-input";
   input.value = fecha;
   input.setAttribute("aria-label", "Fecha");
+  if (desdeHoy && hoy) input.min = hoy;
   input.addEventListener("change", async () => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.value)) return;
+    if (desdeHoy && hoy && input.value < hoy) {
+      input.value = hoy;
+      if (fecha === hoy) return;
+    }
     fecha = input.value;
     aviso = "";
     await cargar();
@@ -237,6 +251,164 @@ function cerrarModalLicencia() {
   if (modal) modal.hidden = true;
 }
 
+function formatearNombre(valor) {
+  let salida = "";
+  let nueva = true;
+  for (const char of String(valor || "").trim().replace(/\s+/g, " ")) {
+    if (char === " " || char === "-" || char === "'") {
+      salida += char;
+      nueva = true;
+      continue;
+    }
+    salida += nueva ? char.toLocaleUpperCase("es-AR") : char.toLocaleLowerCase("es-AR");
+    nueva = false;
+  }
+  return salida;
+}
+
+function digitosTelefono(valor) {
+  return String(valor || "").replace(/\D/g, "");
+}
+
+function normalizarTexto(valor) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
+function letrasBusqueda(valor) {
+  return normalizarTexto(valor).replace(/[^a-zñ]/g, "");
+}
+
+function consultaLista(valor) {
+  return letrasBusqueda(valor).length >= 2 || digitosTelefono(valor).length >= 6;
+}
+
+function clientePorTelefono(valor) {
+  const digitos = digitosTelefono(valor);
+  if (digitos.length < 6) return null;
+  return snapshot?.clientes.find((item) => digitosTelefono(item.telefono) === digitos) || null;
+}
+
+function clientePorNombre(valor) {
+  const texto = normalizarTexto(valor);
+  if (letrasBusqueda(valor).length < 2) return null;
+  const iguales = (snapshot?.clientes || []).filter((item) => normalizarTexto(item.nombre) === texto);
+  return iguales.length === 1 ? iguales[0] : null;
+}
+
+function clienteIdentificado(valor) {
+  return clientePorTelefono(valor) || clientePorNombre(valor);
+}
+
+function clientesCoinciden(valor) {
+  const digitos = digitosTelefono(valor);
+  const texto = normalizarTexto(valor).replace(/\d/g, "").replace(/\s+/g, " ").trim();
+  if (!digitos && !texto) return [];
+  const lista = (snapshot?.clientes || []).filter((item) => {
+    const telefono = digitosTelefono(item.telefono);
+    const nombre = normalizarTexto(item.nombre);
+    const porTelefono = Boolean(digitos && telefono.includes(digitos));
+    const porNombre = Boolean(texto && nombre.includes(texto));
+    if (digitos && texto) return porTelefono && porNombre;
+    return porTelefono || porNombre;
+  });
+  lista.sort((a, b) => {
+    const puesto = (item) => {
+      const nombre = normalizarTexto(item.nombre);
+      const telefono = digitosTelefono(item.telefono);
+      if (texto && nombre.startsWith(texto)) return 0;
+      if (texto && nombre.includes(texto)) return 1;
+      if (digitos && telefono.startsWith(digitos)) return 2;
+      return 3;
+    };
+    const diferencia = puesto(a) - puesto(b);
+    if (diferencia) return diferencia;
+    return a.nombre.localeCompare(b.nombre, "es");
+  });
+  return lista;
+}
+
+function clienteParaAlquiler(valor) {
+  return clienteIdentificado(valor) || (clientesCoinciden(valor).length === 1 ? clientesCoinciden(valor)[0] : null);
+}
+
+function datosClienteNuevo(valor) {
+  const texto = String(valor || "").trim();
+  const nombre = texto.replace(/\d/g, "").replace(/\s+/g, " ").trim();
+  const digitos = digitosTelefono(texto);
+  return {
+    nombre: letrasBusqueda(nombre).length >= 2 ? nombre : "",
+    telefono: digitos.length >= 6 ? digitos : "",
+  };
+}
+
+function abrirModalCliente(valor) {
+  if (licenciaBloqueada()) return;
+  const modal = document.getElementById("modal-cliente");
+  const error = document.getElementById("modal-cliente-error");
+  const ayuda = document.getElementById("modal-cliente-ayuda");
+  const campoTelefono = document.getElementById("modal-cliente-telefono");
+  const campoNombre = document.getElementById("modal-cliente-nombre");
+  if (!modal || !campoTelefono || !campoNombre) return;
+  if (error) error.textContent = "";
+  const datos = datosClienteNuevo(valor);
+  campoTelefono.value = datos.telefono;
+  campoNombre.value = formatearNombre(datos.nombre);
+  if (ayuda) {
+    ayuda.textContent = datos.nombre && !datos.telefono
+      ? "Ese nombre no está cargado. Completá el teléfono para darlo de alta."
+      : "Ese teléfono no está cargado. Completá el nombre para darlo de alta.";
+  }
+  modal.hidden = false;
+  (datos.nombre && !datos.telefono ? campoTelefono : campoNombre).focus();
+}
+
+function cerrarModalCliente() {
+  const modal = document.getElementById("modal-cliente");
+  if (modal) modal.hidden = true;
+}
+
+async function guardarClienteDesdeModal(evento) {
+  evento.preventDefault();
+  const campoTelefono = document.getElementById("modal-cliente-telefono");
+  const campoNombre = document.getElementById("modal-cliente-nombre");
+  const error = document.getElementById("modal-cliente-error");
+  const telefono = campoTelefono.value.trim();
+  const nombre = formatearNombre(campoNombre.value);
+  campoNombre.value = nombre;
+  if (digitosTelefono(telefono).length < 6) {
+    error.textContent = "Escribí el teléfono del cliente.";
+    campoTelefono.focus();
+    return;
+  }
+  if (!nombre) {
+    error.textContent = "Falta el nombre del cliente.";
+    campoNombre.focus();
+    return;
+  }
+  const ya = clientePorTelefono(telefono);
+  if (ya) {
+    alquilerTelefono = ya.telefono || telefono;
+    alquilerBuscado = false;
+    cerrarModalCliente();
+    pintar();
+    return;
+  }
+  if (frenarPorLicencia()) return;
+  const respuesta = await window.canchas.guardarCliente({ nombre, telefono, fecha });
+  if (!respuesta.ok) {
+    error.textContent = respuesta.error;
+    return;
+  }
+  alquilerTelefono = telefono;
+  alquilerBuscado = false;
+  cerrarModalCliente();
+  aplicar(respuesta.estado);
+}
+
 function aplicarEstadoLicencia(respuesta) {
   if (respuesta?.status !== "ok") return;
   licencia = {
@@ -334,6 +506,11 @@ function asegurarSeleccion() {
 }
 
 function pintar() {
+  if (seccion === "canchas" && snapshot?.hoy && fecha < snapshot.hoy) {
+    fecha = snapshot.hoy;
+    cargar();
+    return;
+  }
   asegurarSeleccion();
   document.querySelectorAll(".nav-btn").forEach((item) => {
     item.classList.toggle("activo", item.dataset.vista === seccion);
@@ -374,12 +551,15 @@ function tarjetaCancha(cancha) {
 }
 
 function pintarCanchas() {
-  lienzo.append(barraFecha(), filaHoras(), leyenda());
+  lienzo.append(barraFecha({ desdeHoy: true }), filaHoras(), leyenda());
   const mapa = el("div", "mapa");
   const chips = [];
   const predio = el("section", "predio");
   predio.append(el("h2", "", "Predio"));
   const canchas = snapshot.canchas;
+  if (!canchas.length) {
+    predio.append(el("p", "vacio", "Todavía no hay canchas. Cargalas en Configuración."));
+  }
   const usadas = new Set();
   const grandes = canchas.filter((cancha) => canchas.some((otra) => otra.dentroDe === cancha.id));
   for (const grande of grandes) {
@@ -441,22 +621,170 @@ function pintarPanel() {
 }
 
 function formularioLibre(cancha) {
-  const busqueda = el("label", "", "Cliente");
-  const input = document.createElement("input");
-  input.type = "text";
-  input.placeholder = "Buscar por nombre o teléfono";
-  input.autocomplete = "off";
-  busqueda.append(input);
-  const sugerencias = el("div");
-  input.addEventListener("input", () => {
-    delete input.dataset.clienteId;
-    pintarSugerencias(sugerencias, input);
+  const telefono = document.createElement("input");
+  telefono.type = "text";
+  telefono.placeholder = "Nombre o teléfono";
+  telefono.autocomplete = "off";
+  telefono.dataset.telefonoCliente = "1";
+  telefono.setAttribute("aria-autocomplete", "list");
+  telefono.value = alquilerTelefono;
+  const cajaTelefono = el("label", "", "Cliente");
+  cajaTelefono.append(telefono);
+  const grupoTelefono = el("div", "telefono-cliente");
+  const sugerencias = el("div", "sugerencias");
+  sugerencias.hidden = true;
+  grupoTelefono.append(cajaTelefono, sugerencias);
+  const estadoCliente = el("p", "cliente-detectado");
+  let sugerenciaIndice = 0;
+  const marcarSugerencia = () => {
+    const botones = [...sugerencias.querySelectorAll("button")];
+    botones.forEach((item, indice) => item.classList.toggle("activo", indice === sugerenciaIndice));
+    const elegido = botones[sugerenciaIndice];
+    if (!elegido) return;
+    const arriba = elegido.offsetTop;
+    const abajo = arriba + elegido.offsetHeight;
+    if (arriba < sugerencias.scrollTop) sugerencias.scrollTop = arriba;
+    else if (abajo > sugerencias.scrollTop + sugerencias.clientHeight) {
+      sugerencias.scrollTop = abajo - sugerencias.clientHeight;
+    }
+  };
+  const pintarEstadoCliente = () => {
+    estadoCliente.replaceChildren();
+    const persona = clienteIdentificado(telefono.value);
+    if (persona && sugerencias.hidden) {
+      estadoCliente.hidden = false;
+      estadoCliente.classList.remove("pendiente");
+      estadoCliente.append(persona.telefono ? `${persona.nombre} · ${persona.telefono}` : persona.nombre);
+      return;
+    }
+    if (alquilerBuscado && consultaLista(telefono.value) && !clientesCoinciden(telefono.value).length) {
+      estadoCliente.hidden = false;
+      estadoCliente.classList.add("pendiente");
+      const cargar = boton("Cargar cliente", "enlace");
+      cargar.addEventListener("click", () => abrirModalCliente(telefono.value.trim()));
+      estadoCliente.append("No está cargado. ", cargar);
+      return;
+    }
+    estadoCliente.hidden = true;
+    estadoCliente.classList.remove("pendiente");
+  };
+  const elegirCliente = (persona) => {
+    alquilerTelefono = persona.telefono || persona.nombre;
+    alquilerBuscado = false;
+    telefono.value = alquilerTelefono;
+    sugerencias.hidden = true;
+    pintarEstadoCliente();
+  };
+  const pintarSugerencias = () => {
+    sugerencias.replaceChildren();
+    const consulta = telefono.value.trim();
+    const coincidencias = clientesCoinciden(consulta);
+    const exacto = clienteIdentificado(consulta);
+    if (!consulta || document.activeElement !== telefono) {
+      sugerencias.hidden = true;
+      pintarEstadoCliente();
+      return;
+    }
+    for (const persona of coincidencias) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.append(el("strong", "", persona.nombre), el("small", "", persona.telefono || "Sin teléfono"));
+      item.addEventListener("mousedown", (evento) => evento.preventDefault());
+      item.addEventListener("click", () => elegirCliente(persona));
+      sugerencias.append(item);
+    }
+    if (!exacto && consultaLista(consulta) && !coincidencias.length) {
+      const nuevo = document.createElement("button");
+      nuevo.type = "button";
+      nuevo.className = "nuevo";
+      nuevo.textContent = "Cargar cliente nuevo";
+      nuevo.addEventListener("mousedown", (evento) => evento.preventDefault());
+      nuevo.addEventListener("click", () => {
+        sugerencias.hidden = true;
+        alquilerTelefono = telefono.value;
+        recordarCobro();
+        alquilerAccesorios = accesoriosMarcados();
+        const pagoActual = panel.querySelector("[data-metodo]");
+        if (pagoActual) alquilerMetodo = pagoActual.value;
+        alquilerBuscado = true;
+        abrirModalCliente(telefono.value.trim());
+      });
+      sugerencias.append(nuevo);
+    }
+    sugerencias.hidden = sugerencias.childElementCount === 0;
+    sugerenciaIndice = 0;
+    marcarSugerencia();
+    pintarEstadoCliente();
+  };
+  const buscarCliente = () => {
+    alquilerTelefono = telefono.value;
+    recordarCobro();
+    alquilerAccesorios = accesoriosMarcados();
+    const pagoActual = panel.querySelector("[data-metodo]");
+    if (pagoActual) alquilerMetodo = pagoActual.value;
+    sugerencias.hidden = true;
+    if (clienteParaAlquiler(telefono.value)) {
+      alquilerBuscado = false;
+      pintarEstadoCliente();
+      return;
+    }
+    if (!consultaLista(telefono.value)) {
+      alquilerBuscado = false;
+      pintarEstadoCliente();
+      return;
+    }
+    alquilerBuscado = true;
+    pintarEstadoCliente();
+    abrirModalCliente(telefono.value.trim());
+  };
+  telefono.addEventListener("input", () => {
+    alquilerTelefono = telefono.value;
+    alquilerBuscado = false;
+    pintarSugerencias();
   });
-  input.addEventListener("keydown", (evento) => {
+  telefono.addEventListener("focus", () => pintarSugerencias());
+  telefono.addEventListener("keydown", (evento) => {
+    const botones = [...sugerencias.querySelectorAll("button")];
+    if (evento.key === "ArrowDown" && !sugerencias.hidden && botones.length) {
+      evento.preventDefault();
+      sugerenciaIndice = Math.min(sugerenciaIndice + 1, botones.length - 1);
+      marcarSugerencia();
+      return;
+    }
+    if (evento.key === "ArrowUp" && !sugerencias.hidden && botones.length) {
+      evento.preventDefault();
+      sugerenciaIndice = Math.max(sugerenciaIndice - 1, 0);
+      marcarSugerencia();
+      return;
+    }
+    if (evento.key === "Escape") {
+      sugerencias.hidden = true;
+      pintarEstadoCliente();
+      return;
+    }
     if (evento.key !== "Enter") return;
     evento.preventDefault();
-    panel.querySelector(".registrar")?.click();
+    if (!sugerencias.hidden && botones.length) {
+      botones[sugerenciaIndice]?.click();
+      return;
+    }
+    if (clienteParaAlquiler(telefono.value)) panel.querySelector(".registrar")?.focus();
+    else buscarCliente();
   });
+  telefono.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (sugerencias.contains(document.activeElement)) return;
+      sugerencias.hidden = true;
+      if (document.activeElement?.classList.contains("registrar")) return;
+      if (!document.getElementById("modal-cliente")?.hidden) return;
+      if (clienteParaAlquiler(telefono.value) || clientesCoinciden(telefono.value).length || !consultaLista(telefono.value)) {
+        pintarEstadoCliente();
+        return;
+      }
+      buscarCliente();
+    }, 150);
+  });
+  pintarEstadoCliente();
 
   const lista = el("div");
   lista.append(el("h3", "", "Accesorios"));
@@ -466,6 +794,7 @@ function formularioLibre(cancha) {
     check.type = "checkbox";
     check.value = accesorio.id;
     check.dataset.precio = String(accesorio.precio);
+    check.checked = alquilerAccesorios.includes(accesorio.id);
     fila.append(check, el("span", "", `${accesorio.nombre} (${dinero(accesorio.precio)})`));
     lista.append(fila);
   }
@@ -478,32 +807,76 @@ function formularioLibre(cancha) {
   comision.dataset.comision = "1";
   cuenta.append(extra, nota, comision);
   const medio = el("label", "", "Medio de pago");
-  const select = document.createElement("select");
-  for (const item of metodos) select.append(opcion(item[0], item[1]));
-  medio.append(select);
+  const pago = document.createElement("select");
+  pago.dataset.metodo = "1";
+  for (const item of metodos) pago.append(opcion(item[0], item[1], item[0] === alquilerMetodo));
+  pago.addEventListener("change", () => {
+    alquilerMetodo = pago.value;
+  });
+  medio.append(pago);
+  const cobro = el("div", "cobro");
+  cobro.append(el("h3", "", "Cobro"));
+  const opcionCobro = (valor, texto) => {
+    const fila = el("label", "opcion");
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "cobro";
+    radio.value = valor;
+    radio.checked = alquilerCobro === valor;
+    fila.append(radio, el("span", "", texto));
+    return fila;
+  };
+  const cajaSena = el("label", "", "Importe de la seña");
+  const importeSena = document.createElement("input");
+  importeSena.type = "text";
+  importeSena.inputMode = "numeric";
+  importeSena.placeholder = "Importe";
+  importeSena.dataset.sena = "1";
+  importeSena.value = alquilerSena;
+  cajaSena.append(importeSena);
+  cajaSena.hidden = alquilerCobro !== "sena";
+  const saldo = el("span", "saldo-cobro", "");
+  saldo.dataset.saldo = "1";
+  cobro.append(opcionCobro("total", "Pago total"), opcionCobro("sena", "Seña"), cajaSena, saldo);
+  cobro.addEventListener("change", () => {
+    alquilerCobro = cobro.querySelector("input[name=cobro]:checked")?.value || "total";
+    alquilerSena = importeSena.value;
+    cajaSena.hidden = alquilerCobro !== "sena";
+    actualizarCuenta();
+  });
+  importeSena.addEventListener("input", () => {
+    alquilerSena = importeSena.value;
+    actualizarCuenta();
+  });
   const error = el("strong", "deuda", "");
   const registrar = boton("Registrar alquiler", "registrar");
   registrar.disabled = licenciaBloqueada();
-  registrar.addEventListener("click", () => registrarAlquiler(cancha, input, select, error, registrar));
-  panel.append(busqueda, sugerencias, lista, cuenta, medio, error, registrar);
+  registrar.addEventListener("click", () => {
+    const coincidencias = clientesCoinciden(telefono.value);
+    if (!clienteIdentificado(telefono.value) && coincidencias.length > 1) {
+      error.textContent = "Elegí un cliente de la lista.";
+      telefono.focus();
+      pintarSugerencias();
+      return;
+    }
+    error.textContent = "";
+    registrarAlquiler(cancha, telefono, pago, error, registrar);
+  });
+  panel.append(grupoTelefono, estadoCliente, lista, cuenta, medio, cobro, error, registrar);
+  actualizarCuenta();
 }
 
-function pintarSugerencias(contenedor, input) {
-  contenedor.replaceChildren();
-  const q = input.value.trim().toLowerCase();
-  if (!q) return;
-  const coincidencias = snapshot.clientes.filter((item) =>
-    item.nombre.toLowerCase().includes(q) || (item.telefono || "").toLowerCase().includes(q)
-  ).slice(0, 8);
-  for (const cliente of coincidencias) {
-    const item = boton(`${cliente.nombre}${cliente.telefono ? ` · ${cliente.telefono}` : ""}`);
-    item.addEventListener("click", () => {
-      input.value = cliente.nombre;
-      input.dataset.clienteId = cliente.id;
-      contenedor.replaceChildren();
-    });
-    contenedor.append(item);
-  }
+function pesosEnteros(valor) {
+  const digitos = String(valor || "").replace(/\D/g, "");
+  if (!digitos) return NaN;
+  return Number(digitos);
+}
+
+function recordarCobro() {
+  const tipo = panel.querySelector("input[name=cobro]:checked")?.value;
+  const importe = panel.querySelector("[data-sena]");
+  if (tipo) alquilerCobro = tipo;
+  if (importe) alquilerSena = importe.value;
 }
 
 function accesoriosMarcados() {
@@ -517,26 +890,67 @@ function actualizarCuenta() {
     .reduce((suma, input) => suma + Number(input.dataset.precio), 0);
   panel.querySelector("[data-extra]").textContent = `Cancha ${dinero(cancha.precio)} + accesorios ${dinero(extra)}`;
   panel.querySelector("[data-comision]").textContent = dinero(comisionDe(cancha.precio));
+  const saldo = panel.querySelector("[data-saldo]");
+  if (!saldo) return;
+  const total = cancha.precio + extra;
+  const conSena = panel.querySelector("input[name=cobro]:checked")?.value === "sena";
+  if (!conSena) {
+    saldo.textContent = `Se cobra ${dinero(total)}`;
+    return;
+  }
+  const seña = pesosEnteros(panel.querySelector("[data-sena]")?.value);
+  saldo.textContent = Number.isFinite(seña) && seña > 0 && seña < total
+    ? `Seña ${dinero(seña)} · saldo ${dinero(total - seña)}`
+    : `El total es ${dinero(total)}`;
 }
 
-async function registrarAlquiler(cancha, input, select, error, registrar) {
-  const escrito = input.value.trim();
-  const elegido = snapshot.clientes.find((item) => item.id === input.dataset.clienteId);
+async function registrarAlquiler(cancha, telefono, pago, error, registrar) {
+  const escrito = telefono.value.trim();
+  const persona = clienteParaAlquiler(escrito);
+  if (!persona && clientesCoinciden(escrito).length > 1) {
+    error.textContent = "Elegí un cliente de la lista.";
+    telefono.focus();
+    return;
+  }
+  if (!persona) {
+    if (!consultaLista(escrito)) {
+      error.textContent = "Escribí el nombre o el teléfono del cliente.";
+      telefono.focus();
+      return;
+    }
+    error.textContent = "";
+    alquilerTelefono = escrito;
+    recordarCobro();
+    alquilerAccesorios = accesoriosMarcados();
+    alquilerMetodo = pago.value;
+    alquilerBuscado = true;
+    abrirModalCliente(escrito);
+    return;
+  }
   registrar.disabled = true;
+  recordarCobro();
+  const conSena = alquilerCobro === "sena";
+  const seña = pesosEnteros(alquilerSena);
   const respuesta = await window.canchas.alquilar({
     canchaId: cancha.id,
     fecha,
     hora,
-    cliente: escrito,
-    clienteId: elegido && elegido.nombre === escrito ? elegido.id : undefined,
+    cliente: persona.nombre,
+    telefono: persona.telefono || escrito,
+    clienteId: persona.id,
     accesorios: accesoriosMarcados(),
-    metodo: select.value,
+    metodo: pago.value,
+    sena: conSena,
+    abonado: conSena ? seña : undefined,
   });
   registrar.disabled = false;
   if (!respuesta.ok) {
     error.textContent = respuesta.error;
     return;
   }
+  alquilerAccesorios = [];
+  alquilerCobro = "total";
+  alquilerSena = "";
   aviso = "Alquiler registrado.";
   aplicar(respuesta.estado);
 }
@@ -548,10 +962,14 @@ function formularioAlquilada(turno) {
     el("p", "", `Accesorios: ${nombres.length ? nombres.join(", ") : "Sin accesorios"}`),
     el("p", "", `Total: ${dinero(turno.monto)}`)
   );
-  if (!turno.pagado) {
-    const cobrar = boton("Cobrar", "primario", { cobrarTurno: turno.id });
+  if (turno.saldo > 0) {
+    if (turno.abonado > 0) panel.append(el("p", "", `Seña: ${dinero(turno.abonado)}`));
+    panel.append(el("p", "", `Saldo: ${dinero(turno.saldo)}`));
+    const cobrar = boton("Cancelar saldo", "primario", { cobrarTurno: turno.id });
     cobrar.disabled = licenciaBloqueada();
     panel.append(cobrar);
+  } else {
+    panel.append(el("p", "", "Cobrado"));
   }
   const anular = boton("Anular alquiler", "anular", { cancelarTurno: turno.id });
   anular.disabled = licenciaBloqueada();
@@ -596,10 +1014,19 @@ function pintarAlquileres() {
   lienzo.append(filtro);
 
   const turnos = (snapshot.turnos || []).filter((turno) => String(turno.fecha).startsWith(mes));
-  const cobrados = turnos.filter((turno) => turno.pagado);
-  const alquilerCanchas = cobrados.reduce((suma, turno) => suma + turno.monto - extraDe(turno), 0);
-  const accesorios = cobrados.reduce((suma, turno) => suma + extraDe(turno), 0);
-  const total = cobrados.reduce((suma, turno) => suma + turno.monto, 0);
+  const cobrados = turnos.map((turno) => {
+    const cancha = Math.max(0, turno.monto - extraDe(turno));
+    const abonado = Number(turno.abonado) || 0;
+    return {
+      cancha: Math.min(abonado, cancha),
+      extra: Math.max(0, abonado - cancha),
+      abonado,
+      comision: turno.pagado ? turno.comision : 0,
+    };
+  });
+  const alquilerCanchas = cobrados.reduce((suma, turno) => suma + turno.cancha, 0);
+  const accesorios = cobrados.reduce((suma, turno) => suma + turno.extra, 0);
+  const total = cobrados.reduce((suma, turno) => suma + turno.abonado, 0);
   const comision = cobrados.reduce((suma, turno) => suma + turno.comision, 0);
   const tarjetas = el("div", "tarjetas");
   for (const item of [
@@ -648,6 +1075,7 @@ function pintarAlquileres() {
       etiquetaMetodo(turno.metodo),
     ]) fila.append(el("td", "", texto));
     const accion = document.createElement("td");
+    if (turno.saldo > 0) accion.append(boton("Cancelar saldo", "primario", { cobrarTurno: turno.id }));
     accion.append(boton("Anular", "", { cancelarTurno: turno.id }));
     fila.append(accion);
     tbody.append(fila);
@@ -657,17 +1085,44 @@ function pintarAlquileres() {
 }
 
 function pintarClientes() {
-  lienzo.append(el("h2", "", "Clientes"));
-  const filas = snapshot.clientes.map((cliente) => {
-    const fila = el("div", "fila");
-    fila.append(el("strong", "", cliente.nombre), el("span", "", cliente.telefono || "Sin teléfono"));
-    return fila;
-  });
-  if (!filas.length) {
-    lienzo.append(el("p", "", "Todavía no hay clientes."));
-    return;
+  const raiz = el("section", "config");
+  raiz.append(el("h2", "", "Clientes"));
+  const form = document.createElement("form");
+  form.id = "form-cliente";
+  form.noValidate = true;
+  if (clienteEditId) form.dataset.id = clienteEditId;
+  const editado = snapshot.clientes.find((item) => item.id === clienteEditId) || null;
+  const telefono = campo("telefono", "Teléfono");
+  telefono.querySelector("input").required = false;
+  form.append(
+    campo("nombre", "Nombre"),
+    telefono,
+    submit(editado ? "Guardar cliente" : "Agregar cliente"),
+    boton("Nuevo cliente", "", { limpiarCliente: "1" }),
+    el("p", "error deuda", "")
+  );
+  if (editado) {
+    form.nombre.value = editado.nombre;
+    form.telefono.value = editado.telefono || "";
   }
-  lienzo.append(tablaDe(filas));
+  form.nombre.addEventListener("blur", () => {
+    form.nombre.value = formatearNombre(form.nombre.value);
+  });
+  raiz.append(form);
+  if (!snapshot.clientes.length) raiz.append(el("p", "vacio-lista", "Todavía no hay clientes."));
+  const lista = el("div", "tabla");
+  for (const cliente of snapshot.clientes) {
+    const fila = el("div", "fila");
+    fila.append(
+      el("strong", "", cliente.nombre),
+      el("span", "", cliente.telefono || "Sin teléfono"),
+      boton("Editar", "", { editarCliente: cliente.id }),
+      boton("Quitar", "", { quitarCliente: cliente.id })
+    );
+    lista.append(fila);
+  }
+  if (snapshot.clientes.length) raiz.append(lista);
+  lienzo.append(raiz);
 }
 
 function pintarEscuelita() {
@@ -726,7 +1181,11 @@ function pintarResumen() {
     fila.append(
       el("strong", "", `${turno.hora} · ${turno.cliente}`),
       el("span", "", turno.cancha),
-      el("span", "", `${dinero(turno.monto)} · ${turno.pagado ? "cobrado" : "a cuenta"}`)
+      el("span", "", turno.pagado
+        ? `${dinero(turno.monto)} · cobrado`
+        : turno.abonado > 0
+          ? `${dinero(turno.monto)} · seña ${dinero(turno.abonado)} · saldo ${dinero(turno.saldo)}`
+          : `${dinero(turno.monto)} · a cuenta`)
     );
     filas.push(fila);
   }
@@ -744,7 +1203,7 @@ function pintarResumen() {
     lienzo.append(el("h2", "", "Lo que todavía se debe"));
     const deudas = el("div", "tabla");
     for (const turno of resumen.deudasTurnos) {
-      deudas.append(el("p", "fila", `${turno.fecha} ${turno.hora} · ${turno.cliente} · ${dinero(turno.monto)}`));
+      deudas.append(el("p", "fila", `${turno.fecha} ${turno.hora} · ${turno.cliente} · saldo ${dinero(turno.saldo)}`));
     }
     for (const cuota of resumen.deudasCuotas) {
       deudas.append(el("p", "fila", `${cuota.alumno} · cuota ${cuota.mes} · ${dinero(cuota.monto)}`));
@@ -964,6 +1423,34 @@ app.addEventListener("click", async (evento) => {
     pintar();
     return;
   }
+  const editarCliente = evento.target.closest("[data-editar-cliente]");
+  if (editarCliente) {
+    clienteEditId = editarCliente.dataset.editarCliente;
+    seccion = "clientes";
+    pintar();
+    return;
+  }
+  const quitarCliente = evento.target.closest("[data-quitar-cliente]");
+  if (quitarCliente) {
+    if (frenarPorLicencia()) return;
+    const persona = snapshot.clientes.find((item) => item.id === quitarCliente.dataset.quitarCliente);
+    if (persona && !window.confirm(`¿Quitar a ${persona.nombre}?`)) return;
+    const respuesta = await window.canchas.eliminarCliente(quitarCliente.dataset.quitarCliente);
+    if (!respuesta.ok) {
+      aviso = respuesta.error;
+      pintar();
+      return;
+    }
+    if (clienteEditId === quitarCliente.dataset.quitarCliente) clienteEditId = null;
+    aviso = "Cliente quitado.";
+    aplicar(respuesta.estado);
+    return;
+  }
+  if (evento.target.closest("[data-limpiar-cliente]")) {
+    clienteEditId = null;
+    pintar();
+    return;
+  }
   const editarAccesorio = evento.target.closest("[data-editar-accesorio]");
   if (editarAccesorio) {
     accesorioEditId = editarAccesorio.dataset.editarAccesorio;
@@ -1028,6 +1515,19 @@ app.addEventListener("submit", async (evento) => {
     aplicar(respuesta.estado);
     return;
   }
+  if (form.id === "form-cliente") {
+    const respuesta = await window.canchas.guardarCliente({
+      id: form.dataset.id || undefined,
+      nombre: datos.get("nombre"),
+      telefono: datos.get("telefono"),
+      fecha,
+    });
+    if (!respuesta.ok) return mostrarError(form, respuesta.error);
+    clienteEditId = null;
+    aviso = "Cliente guardado.";
+    aplicar(respuesta.estado);
+    return;
+  }
   if (form.id === "form-alumno") {
     const respuesta = await window.canchas.agregarAlumno({
       nombre: datos.get("nombre"),
@@ -1045,6 +1545,18 @@ document.getElementById("btn-activar-licencia")?.addEventListener("click", activ
 document.getElementById("btn-cerrar-licencia")?.addEventListener("click", cerrarModalLicencia);
 document.getElementById("modal-licencia")?.addEventListener("click", (evento) => {
   if (evento.target.id === "modal-licencia") cerrarModalLicencia();
+});
+document.getElementById("modal-cliente-nombre")?.addEventListener("blur", (evento) => {
+  evento.target.value = formatearNombre(evento.target.value);
+});
+document.getElementById("form-cliente-popup")?.addEventListener("submit", guardarClienteDesdeModal);
+document.getElementById("btn-cerrar-cliente")?.addEventListener("click", cerrarModalCliente);
+document.getElementById("modal-cliente")?.addEventListener("click", (evento) => {
+  if (evento.target.id === "modal-cliente") cerrarModalCliente();
+});
+document.addEventListener("keydown", (evento) => {
+  if (evento.key !== "Escape") return;
+  if (!document.getElementById("modal-cliente")?.hidden) cerrarModalCliente();
 });
 
 cargar();

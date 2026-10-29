@@ -41,6 +41,8 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === "/api/guardar-cancha") return json(res, store.guardarCancha(cuerpo));
       if (url.pathname === "/api/guardar-accesorio") return json(res, store.guardarAccesorio(cuerpo));
       if (url.pathname === "/api/guardar-comision") return json(res, store.guardarComision(cuerpo));
+      if (url.pathname === "/api/guardar-cliente") return json(res, store.guardarCliente(cuerpo));
+      if (url.pathname === "/api/eliminar-cliente") return json(res, store.eliminarCliente(cuerpo.clienteId));
     }
     let archivo = url.pathname === "/" ? "/src/index.html" : url.pathname;
     if (archivo === "/preview-bridge.js") archivo = "/preview-bridge.js";

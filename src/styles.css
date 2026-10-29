@@ -361,6 +361,12 @@ input.fecha-input {
   padding: 0;
 }
 
+.predio .vacio {
+  margin: 8px 0 4px;
+  color: #3d5246;
+  font-size: 14px;
+}
+
 .predio > h2,
 .misma h2 {
   margin: 0;
@@ -735,6 +741,8 @@ button.marco {
   text-transform: uppercase;
 }
 
+.panel label[hidden] { display: none; }
+
 .panel label:not(.accesorio) input,
 .panel label:not(.accesorio) select {
   text-transform: none;
@@ -773,6 +781,25 @@ button.marco {
   font-variant-numeric: tabular-nums;
 }
 
+.panel label.opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 0;
+  color: var(--tinta);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.panel .saldo-cobro {
+  color: #3c4f44;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .subtotal {
   display: flex;
   flex-direction: column;
@@ -808,6 +835,75 @@ button.marco {
 }
 
 .panel .comision { color: #5c6d63; font-size: 13px; font-weight: 400; }
+
+.panel .cliente-detectado {
+  margin: -2px 0 2px;
+  color: var(--verde-oscuro);
+  font-weight: 700;
+}
+
+.panel .cliente-detectado.pendiente { color: #9a3412; font-weight: 600; }
+
+.panel .cliente-detectado button.enlace {
+  border: 0;
+  background: transparent;
+  color: var(--verde-oscuro);
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.telefono-cliente { position: relative; }
+
+.sugerencias {
+  position: absolute;
+  z-index: 6;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(16, 33, 23, 0.14);
+}
+
+.sugerencias[hidden] { display: none; }
+
+.sugerencias button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid #eef2ec;
+  border-radius: 0;
+  background: #fff;
+  color: var(--tinta);
+  font-weight: 700;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sugerencias button:last-child { border-bottom: 0; }
+
+.sugerencias button small {
+  color: #5c6d63;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sugerencias button.activo,
+.sugerencias button:hover { background: #e7f6ec; }
+
+.sugerencias button.nuevo { color: var(--verde-oscuro); }
 
 .registrar,
 .anular {
@@ -1075,6 +1171,14 @@ tr.fila { display: table-row; }
 }
 
 .modal-contenido h2 { margin: 0 0 8px; }
+
+.modal-contenido label {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
 
 .modal-contenido .ayuda { margin: 0 0 12px; color: var(--suave); }
 

@@ -277,3 +277,117 @@ test("cobrar la cuota del mes suma el monto y la comisión del profesor", () => 
     fs.rmSync(archivo, { force: true });
   }
 });
+
+test("se puede agregar, modificar y quitar un cliente, y alquilar con ese cliente", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const hoy = hoyISO();
+    const formato = store.guardarCliente({ nombre: "juan PEREZ", telefono: "221 555-0202", fecha: hoy });
+    assert.equal(formato.ok, true);
+    assert.equal(formato.estado.clientes.find((item) => item.telefono === "221 555-0202").nombre, "Juan Perez");
+    const compuesto = store.guardarCliente({ nombre: "MARÍA-JOSÉ ÁNGELES", telefono: "221 555-0203", fecha: hoy });
+    assert.equal(compuesto.estado.clientes.find((item) => item.telefono === "221 555-0203").nombre, "María-José Ángeles");
+    const alta = store.guardarCliente({ nombre: "Martín Gómez", telefono: "221 555-0101", fecha: hoy });
+    assert.equal(alta.ok, true);
+    const duplicado = store.guardarCliente({ nombre: "Otro", telefono: "2215550101", fecha: hoy });
+    assert.equal(duplicado.ok, false);
+    const martin = alta.estado.clientes.find((item) => item.nombre === "Martín Gómez");
+    assert.equal(martin.telefono, "221 555-0101");
+    const cambio = store.guardarCliente({ id: martin.id, nombre: "Martín Gómez", telefono: "221 555-0199", fecha: hoy });
+    assert.equal(cambio.ok, true);
+    assert.equal(cambio.estado.clientes.find((item) => item.id === martin.id).telefono, "221 555-0199");
+    const alquiler = store.alquilar({
+      canchaId: "futbol-5-a",
+      fecha: hoy,
+      hora: "18:00",
+      clienteId: martin.id,
+      metodo: "efectivo",
+      accesorios: [],
+    });
+    assert.equal(alquiler.ok, true);
+    assert.equal(alquiler.estado.turnos.find((item) => item.hora === "18:00").cliente, "Martín Gómez");
+    const baja = store.eliminarCliente(martin.id);
+    assert.equal(baja.ok, true);
+    assert.equal(baja.estado.clientes.some((item) => item.id === martin.id), false);
+    assert.equal(baja.estado.turnos.find((item) => item.hora === "18:00").cliente, "Martín Gómez");
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("una seña deja saldo y cancelar el saldo cobra el total", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const hoy = hoyISO();
+    const alquiler = store.alquilar({
+      canchaId: "futbol-5-a",
+      fecha: hoy,
+      hora: "18:00",
+      cliente: "Juan Perez",
+      metodo: "efectivo",
+      sena: true,
+      abonado: 4000,
+    });
+    assert.equal(alquiler.ok, true);
+    const turno = alquiler.estado.turnos.find((item) => item.hora === "18:00");
+    assert.equal(turno.monto, 14000);
+    assert.equal(turno.abonado, 4000);
+    assert.equal(turno.saldo, 10000);
+    assert.equal(turno.pagado, false);
+    assert.equal(alquiler.estado.resumen.alquileres, 4000);
+    assert.equal(alquiler.estado.resumen.deudasTurnos[0].saldo, 10000);
+    const grande = store.alquilar({
+      canchaId: "futbol-5-a",
+      fecha: hoy,
+      hora: "19:00",
+      cliente: "Ana Lopez",
+      metodo: "efectivo",
+      sena: true,
+      abonado: 14000,
+    });
+    assert.equal(grande.ok, false);
+    const cobro = store.cobrarTurno(turno.id);
+    assert.equal(cobro.ok, true);
+    const pago = cobro.estado.turnos.find((item) => item.id === turno.id);
+    assert.equal(pago.pagado, true);
+    assert.equal(pago.abonado, 14000);
+    assert.equal(pago.saldo, 0);
+    assert.equal(cobro.estado.resumen.alquileres, 14000);
+    assert.equal(cobro.estado.resumen.deudasTurnos.length, 0);
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("no se puede alquilar una fecha anterior a hoy", () => {
+  const { store, archivo } = nuevo();
+  try {
+    const ayer = new Date();
+    ayer.setDate(ayer.getDate() - 1);
+    const alquiler = store.alquilar({
+      canchaId: "futbol-5-a",
+      fecha: hoyISO(ayer),
+      hora: "18:00",
+      cliente: "Juan Perez",
+      metodo: "efectivo",
+    });
+    assert.equal(alquiler.ok, false);
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
+
+test("el instalador arranca sin canchas, clientes ni alumnos de muestra", () => {
+  const archivo = path.join(os.tmpdir(), `canchas-vacio-${Date.now()}.json`);
+  const store = crearStore(archivo, { vacio: true });
+  try {
+    const estado = store.snapshot(hoyISO());
+    assert.deepEqual(estado.canchas, []);
+    assert.deepEqual(estado.clientes, []);
+    assert.deepEqual(estado.alumnos, []);
+    assert.deepEqual(estado.turnos, []);
+    assert.deepEqual(estado.accesorios, []);
+  } finally {
+    fs.rmSync(archivo, { force: true });
+  }
+});
